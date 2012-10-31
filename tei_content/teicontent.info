@@ -1,0 +1,11 @@
+name = "TEIContent"
+description = "Lets you upload TEI/XML files as nodes into Drupal"
+core = 7.x
+
+package = "TEICHI"
+files[] = teicontent.install
+files[] = teicontent.module
+files[] = teicontent.cssfile.inc
+configure = admin/config/teichsettings/teicontent
+
+dependencies[] = book

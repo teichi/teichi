@@ -1,0 +1,233 @@
+
+
+
+
+/* ##### Drupal-Main container ##### */
+#inner-content,#center {
+  font-family:Sans-Serif,serif;
+}
+
+.maincontent {
+  font-family:Sans-Serif,
+  serif;
+}
+
+.maincontent {
+  font-size:16px;
+  margin-left:0%;
+  width:73%;
+  text-align:justify;
+  line-height: 1.8;
+}
+
+/* ##### Links ##### */
+/*
+a {
+  color:#3362a3;
+  text-decoration:none;
+}
+
+a:hover {
+ text-decoration:underline;
+}
+
+.pagelink {
+  font-weight:bold;
+  color:#182e6d;
+}
+*/
+
+.extlink{color:#444;}
+
+.note {
+  position:relative;
+  float:right;
+  clear:none;
+  font-family:Sans-Serif;
+  width:33%;
+  background-color:#e3e9f0;
+  z-index:1;
+  display:inline;
+  max-height:250px;
+  overflow:hidden;
+  margin-right:-40%;
+  text-align:left;
+  display:block;
+  line-height:1;
+}
+
+.note a {
+  display:inline;
+  text-decoration:none;
+  font-weight:bold;
+}
+
+.note span.content {
+  line-height:2;
+  display:none;
+  font-size:0.80em;
+}
+
+/*
+.note:hover{
+  z-index:10;
+}
+
+.note:hover span.content {
+  color:black;
+  background:#ffffff;
+  display:block;
+  padding:10px;
+}
+*/
+
+/* ##### Links to notes #####  */
+.authornotelink, .editornotelink {
+  color:white;
+  background-color:#2e4a6b;
+  cursor:pointer;
+}
+
+/* ##### Notes: author ##### */
+.author {
+  margin-top:-1px;
+}
+
+/* ##### Notes: editor ##### */
+.editor {
+  margin-top:20px;
+}
+
+/* ##### Textual variants via choice ##### */
+.sic, .corr{
+  background-color:#eff682;
+}
+
+.orig, .reg, .abbr, .expan {
+  background-color:#e6e7fd;
+}
+
+
+/* ##### Standard display reg-corr-expan etc. ##### */
+.orig{ display:none;}
+.sic{display:none;}
+.hi{font-style: italic;}
+.emph{font-style: italic;}
+.mentioned{font-style: normal;}
+.ll{font-size:0.85em;}
+.note .ll{margin-left:0%;font-size:1.1em;}
+.block{font-size:15px;}
+.italic{font-style: italic;}
+.verse{font-size:1.0em;}
+.verse .note .content{font-size:0.85em;}
+.epigraph {margin-left: 40%; font-size:0.90em;}
+.trailer{text-align:center; font-variant:small-caps;}
+.dateline{margin-left: 60%;}
+.salute{margin-left: 5%;}
+.signed{margin-left: 10%; font-style: italic; line-height: 2.2; font-size:1.0em; }
+.del{text-decoration: line-through;}
+.add{text-decoration: underline;}
+.gap{text-decoration:none}
+.unclear{background-color: #FFB3B3;}
+.stage{font-style:italic; font-variant:normal}
+.speaker{font-variant:small-caps;}
+.sp{font-size:inherit;}
+.lb{text-decoration:none;}
+
+
+/* ##### Toolbar at the bottom of the page ##### */
+#teichisubmenucontainer {
+  margin:0px;
+  position:fixed;
+  left:0px;
+  bottom:0px;
+  width:100%;
+  text-align:center;
+}
+
+#submenu {
+  width:100%;
+  margin:auto;
+  background-color:#c3c8f2;
+  z-index:23;
+  font-size:1.1em;
+  text-align:center;
+  border-top-left-radius: 3px;
+  border-top-right-radius: 3px;
+}
+
+/*#submenu a{color:white;text-decoration:none;}*/
+
+#submenu input {
+  font-size:0.85em;
+  padding:1px;
+}
+
+#pageindex {
+  display:none;
+  overflow:auto;
+  width:100px;
+  height:300px;
+  background-color:#c3c8f2;
+  opacity:0.8;
+  text-align:center;
+  font-size:13px;
+  border:1px solid;
+  border-top-color:#ccc;
+  border-left-color:#ccc;
+  border-bottom-color:#666;
+  border-right-color:#666;
+}
+
+#pageindex,#submenu {
+ font-family:Sans-Serif;
+}
+
+a.pageindexlink ,#pageindex a {
+  font-weight:bold;
+  text-decoration:none;
+  color:black;
+}
+
+#pageindex li {
+  text-align:left;
+  line-height:1.5;
+}
+
+
+#nt {
+  font-size:0.9em;
+  width:200px;
+  max-height:200px;
+  overflow:auto;
+  position:absolute;
+  right:20px;
+  background-color:#eee;
+  border:1px solid;
+  border-top-color:#ccc;
+  border-left-color:#ccc;
+  border-bottom-color:#666;
+  border-right-color:#666;
+}
+
+#activetextmode {
+  color:#6a95c6;
+}
+
+#passivetextmode {
+  color:#ffffff;
+}
+
+#pagesearch{
+  display:inline;
+}
+
+#pnr,#pnrsubmit {
+  font-size:11px;
+  border:1px solid #345667;
+}
+
+.teichi-form-separator {
+ height:210px;
+ border:none;
+}

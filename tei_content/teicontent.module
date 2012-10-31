@@ -1,0 +1,1389 @@
+<?php
+/**
+ * @file
+ * Main file for teicontent module
+ */
+
+
+require_once DRUPAL_ROOT . "/" . drupal_get_path('module', 'teicontent') . "/teicontent.cssfile.inc";
+require_once DRUPAL_ROOT . "/" . drupal_get_path('module', 'teicontent') . "/teicontent.xslfile.inc";
+//TODO: allow dynamic filter/input_format names?
+define ("TEICONTENT_INPUT_FORMAT_NAME", 'teichi');
+define ("TEICONTENT_ALLOWED_FONT_EXTENSIONS", 'ttf woff otf');
+define ("TEICONTENT_FONT_DIR", 'public://teicontent/fonts');
+define ("TEICONTENT_DEFAULT_FONT", 'Sans-Serif');
+define ("TEICONTENT_DEFAULT_NODE_TYPE", 'book');
+define ("TEICONTENT_INAN_TEXT", 'Input was not a number.');
+define ("TEICONTENT_PAGE_NOT_ASSIGNED_TEXT", "The given page number is not assigned.");
+define ("TEICONTENT_PAGE_INDEX_TEXT", "Pagination");
+define ("TEICONTENT_REG_TEXT", "Texte de lecture");
+define ("TEICONTENT_ORIG_TEXT", "Transcription linéaire");
+define ("TEICONTENT_GOTO_TEXT", "Aller à la page:");
+
+/**
+ * hook_help()
+ */
+function teicontent_help($path, $arg) {
+  $output = '';
+  switch ($path) {
+    case "admin/help#teicontent":
+      $output = '<p>' . t("TEI/XML to Drupal converter") . '</p>';
+      break;
+  }
+  return $output;
+}
+
+
+/**
+ * hook_enable()
+ */
+function teicontent_enable() {
+  // check for xml support and other init checks
+  if (!class_exists('DomDocument') || !class_exists('XsltProcessor') || !function_exists('libxml_get_errors')) {
+    drupal_set_message(t('TEI Content: Your instalation of PHP does not have appropriate XML/XSL support.'), 'error');
+    module_disable(array('teicontent'), $disable_dependents = TRUE);
+  }
+  // xsl File
+  _teicontent_write_xsl_file();
+  // check if xsl file present
+  $xslPath = drupal_get_path('module', 'teicontent') . '/xsl/drp_style.xsl';
+  if (!file_exists($xslPath)) {
+    drupal_set_message(t('XSL File is not present. Check your installation! Module directory should be writable for the server'), 'error');
+    module_disable(array('teicontent'), $disable_dependents = TRUE);
+  }
+  // css File
+  _teicontent_write_css_file();
+  // create teichi filter format
+  _teicontent_add_filter_format();
+  // check for teichi nodes after being re-enabled
+  _teicontent_update_node_infos();
+}
+
+
+/**
+ * Creates new filter format
+ */
+function _teicontent_add_filter_format() {
+  // Check if input format is present
+  $formats = filter_formats();
+  foreach ($formats as $key => $format) {
+    if (TEICONTENT_INPUT_FORMAT_NAME === $format->name) {
+      drupal_set_message(t('Input format already present!'));
+      return;
+    }
+  }
+  // Create it
+  $roles = array();
+  $result = db_query("SELECT rid FROM {role}");
+  $roles = $result->fetchCol();
+  $format = new stdClass();
+  $format->format = TEICONTENT_INPUT_FORMAT_NAME;
+  $format->name = 'TEICHI';
+  $format->roles = ', ' . implode(', ', $roles);
+  // assign teicontent as filter for this format
+  $format->filters = array(
+    'teicontent' => array(
+    'status' => 1,
+    //),
+      'settings' => array(
+	          // use relative path!
+             'teicontent_xslt_path' => 'xsl/drp_style.xsl',
+             'teicontent_css_path'  => 'css/teichi.css',
+             //TODO: more than one js file. Drp is included in transform() drp_teichi.js 
+             'teicontent_js_path'  => 'js/drp_main.js',
+      ),
+      'validation' => array(
+                    'teicontent_schema_type' => 'wellformed',
+                    'teicontent_schema_path' => '',
+      ),   
+    ),
+   );
+  // debug($format);
+  filter_format_save($format);
+  drupal_set_message(t('TEICHI input format successfully created'));
+}
+
+
+/**
+ * main filter function
+ */
+function teicontent_filter_info() {
+  $filters['teicontent'] = array(
+  'title' => t('XSL filter for TEI Content'),
+  'process callback' => '_teicontent_filter_xml',
+  'settings callback' => '_teicontent_filter_settings',
+  'tips callback'  => 'teicontent_filter_tips',
+  'cache' => FALSE,
+  );
+  return $filters;
+}
+
+
+
+
+function teicontent_filter_tips($filter, $format, $long = FALSE) {
+  if ($long) {
+    return t('Input filter created by TEI Content module. The whole node body must be a valid TEI document. Conversion is done using XSLT. You can use TEI Content preferences to upload TEI documents directly and adjust colors, fonts and sizes.');
+  }
+  else {
+    return t('Input Format for TEICHI nodes in TEI format. You can use it to set the whole node body to a valid TEI document and transform it to HTML with XSLT.');
+  }
+}
+
+
+
+/**
+ * Invoked from hook_filter_info -> settings callback
+ *
+ * Handles the settings for each text format using filter_xml
+ * separately.
+ */
+function _teicontent_filter_settings($form, &$form_state, $filter, $format, $defaults, $filters) {
+ //TODO: reuse methods!
+  $xslt_path =  'teicontent_xslt_path'    ;// _get_xslt_path_index();
+  $xslt_schema = 'teicontent_schema_type' ; // _get_xslt_schema_index();
+  $schema_path = 'teicontent_schema_path' ; //_get_schema_path_index();
+  
+  $css_path = 'teicontent_css_path' ; //_get_schema_path_index();
+  $js_path = 'teicontent_js_path' ; //_get_schema_path_index();
+  
+  
+  
+  // Defaults must be created dynamically since involve format
+  // name.
+  $settings_defaults = array(
+  $xslt_path => '',
+  $css_path => '',
+  $js_path => '',
+  );
+
+  $validation_defaults = array(
+    $xslt_schema => 'wellformed',
+    $schema_path => '',
+  );
+  
+
+
+  $filter->settings += $settings_defaults;
+  if ( ! array_key_exists( 'validation' , $filter->settings ) ) {
+    $filter->settings['validation'] = array();
+  }
+
+  $filter->settings['validation'] += $validation_defaults;
+
+  $elements = array(
+    '#type' => 'fieldset',
+    '#title' => t('TEI Content'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+
+  $elements[$xslt_path] = array(
+    '#type'    => 'textfield',
+    '#title'   => t('XSLT Script File Path'),
+    '#default_value' => $filter->settings[$xslt_path],
+    '#field_prefix'  => drupal_get_path('module', 'teicontent') . '/',
+    '#description'  => t('The file path to the XSLT script to be used for this format.'),
+  );
+
+  $elements[$css_path] = array(
+    '#type'    => 'textfield',
+    '#title'   => t('CSS Script File Path'),
+    '#default_value' => $filter->settings[$css_path],
+    '#field_prefix'  => drupal_get_path('module', 'teicontent') . '/',
+    '#description'  => t('Optional css file path  to be used for this format.'),
+  );
+  
+  $elements[$js_path] = array(
+    '#type'    => 'textfield',
+    '#title'   => t('JavaScript Script File Path'),
+    '#default_value' => $filter->settings[$js_path],
+    '#field_prefix'  => drupal_get_path('module', 'teicontent') . '/',
+    '#description'  => t('Optional JavaScript file path  to be used for this format.'),
+  );
+  
+  
+  $elements['validation'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('XML Validation'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+
+  $elements['validation'][$xslt_schema] = array(
+    '#type'    => 'select',
+    '#title'   => t('Validation Type'),
+    '#default_value' => $filter->settings['validation'][$xslt_schema],
+    '#options' => array('none' => '[None]', 'wellformed' => 'Well-formedness Only', 'dtd' => 'DTD Validation', 'xsd' => 'XML Schema Validation', 'rng' => 'RNG Schema Validation') ,
+    '#description'  => t('The level of validation required on this format.'),
+  );    
+  
+  $elements['validation'][$schema_path] = array(
+    '#type'    => 'textfield',
+    '#title'   => t('Schema File Path'),
+    '#default_value' => $filter->settings['validation'][$schema_path],
+    '#field_prefix'  => drupal_get_path('module', 'teicontent') . '/',
+    '#description'  => t('The file path to the XSD/RNG schema to be used for validating this format. <b>Leave blank if you do not need schema validation</b>'),
+  );    
+  return $elements;
+
+}
+
+/**
+ * Invoked from hook_filter_info -> process callback
+ */
+function _teicontent_filter_xml($text, $filter, $format, $langcode, $cache, $cache_id) {
+  $index     =  'teicontent_xslt_path'; //_get_xslt_path_index( $format->name );
+  $css_index = 'teicontent_css_path';
+
+  if ( ! array_key_exists( $index , $filter->settings ) ) {
+    return $text;
+  }
+
+  $xslt_path = drupal_get_path('module', 'teicontent') . '/' . $filter->settings[$index];
+  $css_path='';
+  
+  if ( array_key_exists( $css_index , $filter->settings ) ) {
+    $css_path = drupal_get_path('module', 'teicontent') . '/' . $filter->settings[$css_index];
+  }
+  
+  return _teicontent_transform($text, $xslt_path, $css_path);
+}
+
+// TODO: Add css and js per filter?
+
+/**
+ * Performs the XML to HTML processing operation.
+ * @param xml
+ *   The xml document as a text string (mostly obtained from the body of a node)
+ * @param path_to_xslt
+ *   The file path to the XSLT script to be used for processing
+ * @param params
+ *   An array of name-value pairs for special parameters to be passed to the XSLT processor
+ *   before invoking it on the XML data document. Examples include namespace settings and
+ *   XSL parameters.
+ */
+ function _teicontent_transform($xml, $path_to_xslt, $path_to_css = '', $params = array()) {
+
+  if (!$xml) {
+    watchdog('TEI Content', "Empty XML content", array(), WATCHDOG_WARNING);
+    return $xml;
+  }
+  $nid = arg(1);
+  $book = _teicontent_get_book_for_node($nid);
+  // add js file
+  drupal_add_js("var currentNode = " . $nid . ";", 'inline');
+  drupal_add_js("var currentBook = " . $book . ";", 'inline');
+  drupal_add_js(_teicontent_get_js_texts(), 'inline');
+  drupal_add_js(drupal_get_path('module', 'teicontent') . '/js/drp_main.js');
+  drupal_add_js(drupal_get_path('module', 'teicontent') . '/js/drp_teichi.js');
+  
+  
+  // add css file
+  $cssPath =  $path_to_css; 
+  $options = array( "type" => "file");
+  drupal_add_css($cssPath, $options);
+  // Load the XML document
+  $dom = new DomDocument('1.0', 'UTF-8');
+  @$valid = $dom->loadXML($xml);
+  if (!$valid) {
+    watchdog('TEI Content', "Invalid XML/TEI Content", array(), WATCHDOG_WARNING);
+    return $xml;
+  }
+  
+  //debug($xml);
+  
+  // Load the XSLT script
+ //  $path_to_xslt = drupal_get_path('module', 'teicontent') . '/xsl/drp_style.xsl';
+  // var_dump($path_to_xslt);
+  $xsl = new DomDocument('1.0', 'UTF-8');
+  //debug("path is: ". $path_to_xslt);
+  $xsl->load($path_to_xslt);
+  // Create the XSLT processor
+  $proc = new XsltProcessor();
+  $xsl = $proc->importStylesheet($xsl);
+  
+  
+   // Currently the empty &quot;&quot; namespace is used.  
+  if  (!defined('XMLCONTENT_DFLT_NS' )) {
+    define('XMLCONTENT_DFLT_NS', ''); 
+  }
+  
+  
+   // initialize the processor with the parameters when defined
+  foreach  ($params as $key => $value) {
+    $proc->setParameter(XMLCONTENT_DFLT_NS, $key, $value);
+  }
+
+  //debug($dom);
+  
+  // Transform
+  $newdom = $proc->transformToDoc($dom);
+ 
+  $out = $newdom->saveXML();
+  return $out;
+}
+
+//TODO: node_validate
+
+/**
+ * hook_menu()
+ */
+function teicontent_menu() {
+  $items = array();
+  $items['admin/config/teichsettings'] = array(
+    'title' => 'TEICHI Settings',
+    'description' => 'Configure TEICHI modules',
+    'position' => 'left',
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('access administration pages'),
+    'file' => 'system.admin.inc',
+    'file path' => drupal_get_path('module', 'system'),
+  );
+
+  $items['admin/config/teichsettings/teicontent'] = array(
+    'title' => 'TEI Content',
+    'description' => 'Configure TEI Content',
+    'position' => 'left',
+    'access arguments' => array('administer site configuration'),
+    'page callback' => '_teicontent_admin_main_screen',
+  );
+
+  $items['admin/config/teichsettings/teicontent/docs_upload'] = array(
+    'title' => 'Documents upload',
+    'access arguments' => array('administer site configuration'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('teicontent_docs_upload_form'),
+    'type' => MENU_NORMAL_ITEM | MENU_LOCAL_TASK ,
+  );
+
+  $items['admin/config/teichsettings/teicontent/display_settings'] = array(
+    'title' => 'Display settings',
+    'access arguments' => array('administer site configuration'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('teicontent_display_settings_form'),
+    'type' => MENU_NORMAL_ITEM | MENU_LOCAL_TASK ,
+  );
+
+  $items['admin/config/teichsettings/teicontent/fonts_upload'] = array(
+    'title' => 'Fonts upload',
+    'access arguments' => array('administer site configuration'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('teicontent_font_upload_form'),
+    'type' =>  MENU_NORMAL_ITEM | MENU_LOCAL_TASK,
+  );
+  return $items;
+}
+
+
+/**
+ * List of all teichi nodes on the main screen
+ */
+function _teicontent_admin_main_screen() {
+  $header = array(t('Node name'), t('Start page'), t('End page'), t('Operations'));
+  $row = array();
+  // find all nodes with our input format
+  $result = _teicontent_get_teichi_nodes();
+  $out = "";
+  $db_dump = _teicontent_get_teichi_nodes_infos();
+  foreach ( $result as $line) {
+    $start_page = '';
+    $end_page = '';
+    if (array_key_exists($line->nid, $db_dump)) {
+      $start_page = $db_dump[$line->nid]->startpage;
+      $end_page = $db_dump[$line->nid]->endpage;
+    }
+    $row[] = array($line->title, $start_page, $end_page, "<a href=" . (url('node/' . $line->nid)) . ">" . t("view") . "</a>" . " | " . "<a href=" . (url('node/' . $line->nid)) . "/delete>" . t("delete") . "</a>");
+  }
+  $out .= theme('table', array('header' => $header, 'rows' => $row));
+  return $out;
+}
+
+
+/**
+ * TEI-docs upload form
+ */
+function teicontent_docs_upload_form($form, &$form_state) {
+  $form = array();
+  $form['#attributes']['enctype'] = 'multipart/form-data';
+  $form['teicontent_doc_upload'] = array(
+    '#type' => 'file',
+    '#title' => t('TEI file to create a node from its contents'),
+    '#size' => 40,
+  );
+  $form['teicontent_node_type'] = array(
+    '#title' => t('Node type'),
+    '#type' => 'select',
+    '#options' => _teicontent_get_node_types(),
+    '#default_value' => TEICONTENT_DEFAULT_NODE_TYPE,
+    '#description' => t('Node type used for creation'),
+    '#style' => (module_exists('book')?"float:left;":"float:none;"),
+  );
+  $form['teicontent_book'] = array(
+    '#title' => t('Book'),
+    '#type' => 'select',
+    '#options' => _teicontent_get_books(),
+    '#description' => t('Assign a book page to a book'),
+  );
+
+  if (module_exists('teisearch')) {
+    //drupal_cron_run();
+    $form['tei2pub_checkbox_teisearch_index'] = array(
+      '#title' => t('TEI Search module is enabled. Add TEI file to index after upload?'),
+      '#type' => 'checkbox',
+      '#default_value' => 1,
+
+    );
+  }
+
+  $form['tei2pub_submit_upload'] = array(
+    '#type' => 'submit',
+    '#value' => 'Submit'
+  );
+
+  return $form;
+}
+
+
+/**
+ * TEI-docs upload form submit
+ */
+function teicontent_docs_upload_form_submit($form, &$form_state) {
+  $validators = array(
+    'file_validate_extensions' => array( 0 => "txt xml tei")
+  );
+  if ($file = file_save_upload('teicontent_doc_upload', $validators)) {
+    $node_type = $form_state['values']['teicontent_node_type'];
+    $book = $form_state['values']['teicontent_book'];
+    _teicontent_create_node($file->uri, $node_type, $book);
+    if (isset($form_state['values']['tei2pub_checkbox_teisearch_index']) && $form_state['values']['tei2pub_checkbox_teisearch_index'] == '1') {
+    drupal_cron_run();
+    }
+  }
+  else {
+    drupal_set_message(t("No file... please supply a valid file"), "error");
+  }
+}
+
+
+function teicontent_display_settings_form($form, &$form_state) {
+  drupal_add_library('system', 'farbtastic');
+  $form['colors'] = array(
+    '#title' => t('Colors'),
+    '#type' => 'fieldset',
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE
+  );
+  /******************* note color *********************/
+  $form['colors']['teicontent_note_color'] = array(
+    '#title' => t('Notes'),
+    '#type' => 'textfield',
+    '#size' => 8,
+    '#maxlength' => 7,
+    '#default_value' => variable_get('teicontent_note_color', '#e3e9f0'),
+    '#description' => t('Color used for notes'),
+    '#prefix' => '<div style="clear:both"><div id="teichocntent_color_picker_1" style="float:right;"></div>',
+    '#suffix' => '</div>',
+  );
+  $form['colors']['teicontent_note_color']['#attached']['js'][] = array(
+    'data' => '(function($) { $(document) .ready(function() { $("#teichocntent_color_picker_1") .farbtastic("#edit-teicontent-note-color"); }); }) (jQuery);',
+       'type' => 'inline',
+  );
+  /******************* sic_corr_highlight color *********************/
+  $form['colors']['teicontent_sic_corr_highlight_color'] = array(
+    '#title' => t('Reg Highlight Color'),
+    '#type' => 'textfield',
+    '#size' => 8,
+    '#maxlength' => 7,
+    '#default_value' => variable_get('teicontent_sic_corr_highlight_color', '#eff682'),
+    '#description' => t('Color used for highlighting regular version of the text.'),
+    '#prefix' => '<div style="clear:both"><div id="teichocntent_color_picker_2" style="float:right;"></div>',
+    '#suffix' => '</div>',
+  );
+  $form['colors']['teicontent_reg_highlight_color']['#attached']['js'][] = array(
+    'data' => '(function($) { $(document) .ready(function() { $("#teichocntent_color_picker_2") .farbtastic("#edit-teicontent-sic-corr-highlight-color"); }); }) (jQuery);',
+    'type' => 'inline',
+  );
+  /******************* orig_reg_highlight color *********************/
+  $form['colors']['teicontent_orig_reg_highlight_color'] = array(
+    '#title' => t('Corr Highlight Color'),
+    '#type' => 'textfield',
+    '#size' => 8,
+    '#maxlength' => 7,
+    '#default_value' => variable_get('teicontent_orig_reg_highlight_color', '#e6e7fd'),
+    '#description' => t('Color used for highlighting the corrected version of the text'),
+    '#prefix' => '<div style="clear:both"><div id="teichocntent_color_picker_3" style="float:right;"></div>',
+    '#suffix' => '</div>',
+  );
+  $form['colors']['teicontent_corr_highlight_color']['#attached']['js'][] = array(
+    'data' => '(function($) { $(document) .ready(function() { $("#teichocntent_color_picker_3") .farbtastic("#edit-teicontent-orig-reg-highlight-color"); }); }) (jQuery);',
+    'type' => 'inline',
+  );
+  /******************* menubar color *********************/
+  $form['colors']['teicontent_menubar_color'] = array(
+    '#title' => t('Menubar'),
+    '#type' => 'textfield',
+    '#size' => 8,
+    '#maxlength' => 7,
+    '#default_value' => variable_get('teicontent_menubar_color', '#c3c8f2'),
+    '#description' => t('Color used for menu bar at the bottom'),
+    '#prefix' => '<div style="clear:both"><div id="teichocntent_color_picker_4" style="float:right;"></div>',
+    '#suffix' => '</div>',
+  );
+  $form['colors']['teicontent_menubar_color']['#attached']['js'][] = array(
+    'data' => '(function($) { $(document) .ready(function() { $("#teichocntent_color_picker_4") .farbtastic("#edit-teicontent-menubar-color"); }); }) (jQuery);',
+    'type' => 'inline',
+  );
+
+  /******************* sizes/dimensions *********************/
+  $form['sizes'] = array(
+    '#title' => t('Sizes'),
+    '#type' => 'fieldset',
+    '#description' => t('Sizes to be used in TEICHI documents.<br/>Possible units are <b>px</b>,<b>pt</b>,<b>%</b> etc.'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE
+  );
+  $form['sizes']['teicontent_maintext_width'] = array(
+    '#title' => t('Main text Width'),
+    '#type' => 'textfield',
+    '#size' => 7,
+    '#default_value' => variable_get('teicontent_maintext_width', '75%'),
+    '#description' => t('Width used for main text')
+  );
+  $form['sizes']['teicontent_notes_width'] = array(
+    '#title' => t('Notes'),
+    '#type' => 'textfield',
+    '#size' => 7,
+    '#default_value' => variable_get('teicontent_notes_width', '20%'),
+    '#description' => t('Width used for notes')
+  );
+  $form['sizes']['teicontent_menu_width'] = array(
+    '#title' => t('Menu'),
+    '#type' => 'textfield',
+    '#size' => 7,
+    '#default_value' => variable_get('teicontent_menu_width', '100%'),
+    '#description' => t('Width used for menu at the bottom')
+  );
+
+  /******************* Fonts *********************/
+  $fonts = array();
+  $font_classes = array("Sans-Serif", "Serif", "Monospace");
+  $custom_fonts = _teicontent_get_font_list();
+  if (is_array($custom_fonts) && (count($custom_fonts) > 0)) {
+    $fonts = array_merge($font_classes, $custom_fonts);
+  }
+  else {
+    $fonts = $font_classes;
+  }
+  $form['fonts'] = array(
+    '#title' => t('Fonts'),
+    '#type' => 'fieldset',
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE
+  );
+  $form['fonts']['teicontent_maintext_font'] = array(
+    '#title' => t('Main text'),
+    '#type' => 'select',
+    '#options' => drupal_map_assoc($fonts, "_teicontent_font_extension"),
+    '#default_value' => variable_get('teicontent_maintext_font', TEICONTENT_DEFAULT_FONT),
+    '#description' => t('Font used for main text')
+  );
+  $form['fonts']['teicontent_notes_font'] = array(
+    '#title' => t('Notes'),
+    '#type' => 'select',
+    '#options' => drupal_map_assoc($fonts, "_teicontent_font_extension"),
+    '#default_value' => variable_get('teicontent_notes_font', TEICONTENT_DEFAULT_FONT),
+    '#description' => t('Font used for notes')
+  );
+  $form['fonts']['teicontent_menu_font'] = array(
+    '#title' => t('Menu'),
+    '#type' => 'select',
+    '#options' => drupal_map_assoc($fonts, "_teicontent_font_extension"),
+    '#default_value' => variable_get('teicontent_menu_font', TEICONTENT_DEFAULT_FONT),
+    '#description' => t('Font used for menu')
+  );
+
+  /******************* Texts *********************/
+  $form['texts'] = array(
+    '#title' => t('Texts'),
+    '#type' => 'fieldset',
+    '#description' => t('Texts that appear in TEIChi documents (like warnings and other dialogs)'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE
+  );
+  $form['texts']['teicontent_inan_text'] = array(
+    '#title' => t('Menu'),
+    '#type' => 'textfield',
+    '#size' => 20,
+    '#maxlength' => 255,
+    '#default_value' => variable_get("teicontent_inan_text", TEICONTENT_INAN_TEXT),
+    '#description' => t('Message displayed when user input was not a number')
+  );
+  $form['texts']['teicontent_pna_text'] = array(
+    '#title' => t('Menu'),
+    '#type' => 'textfield',
+    '#size' => 20,
+    '#maxlength' => 255,
+    '#default_value' => variable_get("teicontent_pna_text", TEICONTENT_PAGE_NOT_ASSIGNED_TEXT),
+    '#description' => t('Message displayed when page is not defined or out of range')
+  );
+  $form['texts']['teicontent_page_index_text'] = array(
+    '#title' => t('Page Index'),
+    '#type' => 'textfield',
+    '#size' => 20,
+    '#maxlength' => 255,
+    '#default_value' => variable_get("teicontent_page_index_text", TEICONTENT_PAGE_INDEX_TEXT),
+    '#description' => t('Text on the page index link')
+  );
+  $form['texts']['teicontent_reg_text'] = array(
+    '#title' => t('Corrected/Regular text version'),
+    '#type' => 'textfield',
+    '#size' => 20,
+    '#maxlength' => 255,
+    '#default_value' => variable_get("teicontent_reg_text", TEICONTENT_REG_TEXT),
+    '#description' => t('Text on the link to switch to that text version')
+  );
+  $form['texts']['teicontent_orig_text'] = array(
+    '#title' => t('Original text version'),
+    '#type' => 'textfield',
+    '#size' => 20,
+    '#maxlength' => 255,
+    '#default_value' => variable_get("teicontent_orig_text", TEICONTENT_ORIG_TEXT),
+    '#description' => t('Text on the link to switch to that text version')
+  );
+  $form['texts']['teicontent_goto_text'] = array(
+    '#title' => t('Goto text'),
+    '#type' => 'textfield',
+    '#size' => 20,
+    '#maxlength' => 255,
+    '#default_value' => variable_get("teicontent_goto_text", TEICONTENT_GOTO_TEXT),
+    '#description' => t('Label for goto textfield')
+  );
+  _teicontent_write_css_file();
+  return system_settings_form($form);
+}
+
+
+function teicontent_font_upload_form($form, &$form_state) {
+  // Validator only ttf, woff and otf are allowed
+  $validators = array(
+     'file_validate_extensions' => array( 0 => TEICONTENT_ALLOWED_FONT_EXTENSIONS)
+  );
+
+  $form = array();
+  $form['teicontent_new_font'] = array(
+   '#type' => 'managed_file',
+   '#title' => t('Choose a WebFont to upload'),
+   '#upload_location' =>  TEICONTENT_FONT_DIR,
+   '#progress_message' => t('Uploading font file. Please wait...'),
+   //'#default_value' => variable_get('teicontent_new_font', 'eewewewew'),
+   '#extended' => TRUE,
+   '#upload_validators' => $validators
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save font permanently'),
+  );
+
+  return $form;
+}
+
+
+/**
+ * hook_validate() checks if user supplied a valid file
+ */
+function teicontent_font_upload_form_validate($form, &$form_state) {
+  if (empty($form_state['values']['teicontent_new_font']['fid'])) {
+    form_set_error('teicontent_new_font', t('Please select a font to upload.'));
+  }
+}
+
+/**
+ * Checks submitted font file
+ * saves it and marks it as 'permanent' if valid
+ *
+ */
+function teicontent_font_upload_form_submit($form, &$form_state) {
+
+  //  save font if valid file fid != 0
+  if ($form_state['values']['teicontent_new_font']['fid'] != 0) {
+    $file = file_load($form_state['values']['teicontent_new_font']['fid']);
+    $file->status = FILE_STATUS_PERMANENT;
+    file_save($file);
+
+    variable_set('teicontent_new_font', $file->fid);
+    drupal_set_message(t('Your font (@font_name, id:@font_id) has been uploaded and saved successfully', array('@font_name' => $file->filename, '@font_id' => $file->fid)));
+  }
+  // file removed
+  elseif ($form_state['values']['teicontent_new_font']['fid'] == 0) {
+    $fid = variable_get('teicontent_new_font', FALSE);
+    $file = $fid ? file_load($fid) : FALSE;
+    if ($file) {
+      file_delete($file);
+    }
+    drupal_set_message(t('The font file @font_file was removed', array('@font_file' => $file->filename)));
+  }
+
+  variable_set('teicontent_new_font', FALSE);
+
+}
+
+
+/* node creation after upload
+ * @params $path_to_file path to the file that has been uploaded
+ * @return boolean TRUE if successful
+ */
+function _teicontent_create_node($file_path, $node_type, $book='new') {
+  $file_content = file_get_contents(drupal_realpath($file_path));
+  $dom = new DomDocument();
+  if (!$dom->loadXML($file_content)) {
+    form_set_error('', t('Invalid XML/TEI Content'));
+    return;
+  }
+  $infos = _teicontent_get_content_infos($dom);
+  $title = $infos['title'];
+  $start_page = $infos['start_page'];
+  $end_page = $infos['end_page'];
+  $divID = $infos['divID'];
+//new
+  $pageInfos = $infos['pageInfos'];
+//
+  $format_name = TEICONTENT_INPUT_FORMAT_NAME;
+  // build new node
+  global $user;
+  $node = new stdClass();
+  $language = LANGUAGE_NONE;
+  $node->title = $title;
+  $node->body = array(
+    $language => array(0 => array('value' => $file_content , 'format' => $format_name))
+  );
+  $node->uid = $user->uid;
+  $node->name = $user->name;
+  $node->format = $format_name;
+  $node->type = $node_type; //'page';
+  $node->status = 1;
+  $node->language = $language;
+  $node->promote = 0;
+  if ($node_type == 'book') {
+    $node->book['bid'] = $book;
+  }
+  $node = node_submit( $node );
+  node_save( $node );
+  $nid = $node->nid;
+  if ($nid > 0) {
+    drupal_set_message(t('Successful node creation') . '<br/>' . t('Node ID: :nid', array(':nid' => $nid)) . '<br/>' . t('Title: :title', array(':title' => $title)) . '<br/>' . t('pages from :startpage to :endpage', array(':startpage' => $start_page, ':endpage' => $end_page)) . '<br/>' . t('divID: :divid', array(':divid' => $divID)));
+    _teicontent_save_node_info($nid, $start_page, $end_page, $divID, $pageInfos);
+  }
+  else {
+    drupal_set_message(t("Node creation failed"), 'error');
+  }
+
+}
+
+/*
+ * @return title,startpage,endpage and divID
+ */
+function _teicontent_get_content_infos($dom) {
+  $title = "TEIChi Node";
+  // check if we have a title
+  $heads = $dom->getElementsByTagName('head');
+  if ($heads->length > 0) {
+    $title = $heads->item(0)->nodeValue;
+  }
+  // check for page numbers
+  $start_page = 0;
+  $end_page = 0;
+  $pbs = $dom->getElementsByTagName('pb');
+  $pbs_count = $pbs->length;
+  if ($pbs_count > 0) {
+    // first pb
+    $fpb = $pbs->item(0);
+    // first page number
+    $fpn = $fpb->getAttribute('xml:id');
+    $fpn = drupal_substr($fpn, 1);
+    if (is_numeric($fpn)) {
+      $start_page = $fpn;
+    }
+    else {
+      drupal_set_message(t('First page has wrong format (:fpn), Only numeric format expected.', array(':fpn' => $fpn)), 'warning');
+    }
+    // check for first page number
+    if ($pbs_count > 1) {
+      // last pb
+      $lpb = $pbs->item($pbs_count - 1);
+      // last page number
+      $lpn = $lpb->getAttribute('xml:id');
+      $lpn = drupal_substr($lpn, 1);
+      if (is_numeric($lpn)) {
+        $end_page = $lpn;
+      }
+      else {
+        drupal_set_message(t('Last page has wrong format (:lpn), Only numeric format expected.', array(':lpn' => $lpn)), 'warning');
+      }
+    }
+    else {
+      $end_page = $start_page;
+    }
+  }
+  // TODO: get xml:id and n from pb tags
+    $pageBreakInfos = _tei_content_getPBInfos($pbs);
+
+  // check for divID
+  $divID = "";
+  $divs = $dom->getElementsByTagName('div');
+  if ($divs->length > 0) {
+    $divID = $divs->item(0)->getAttribute('xml:id');
+  }
+  return array(
+       'title' => $title,
+       'start_page' => $start_page,
+       'end_page' => $end_page,
+       'divID' => $divID,
+       'pageInfos' => $pageBreakInfos 
+  );
+}
+
+/**
+ * Save Node-Infos in teicontent_node_infos table and update the js-file
+ */
+function _teicontent_save_node_info($nid, $start_page, $end_page, $divID, $pageInfos) {
+
+  $jsonPageInfos = json_encode($pageInfos, JSON_FORCE_OBJECT);
+
+   $result = db_merge('teicontent_node_infos')
+    ->key(array('nodenr' => $nid))
+    ->fields(array('startpage' => $start_page, 'endpage' => $end_page, 'divid' => $divID, 'pageInfos' => $jsonPageInfos))
+    ->execute();
+    _teicontent_update_js();
+}
+
+/*
+ * hook_node_delete
+ * This hook is invoked only when a techi-node is deleted
+ */
+function teicontent_node_delete($node) {
+  $count = db_delete('teicontent_node_infos')
+    ->condition('nodenr', ($node->nid))
+    ->execute();
+  if ($count > 0) {
+    _teicontent_update_js();
+  }
+}
+
+/*
+ * update the js-file that content the start and end page for each chapter
+ */
+function _teicontent_update_js() {
+  $js_file_Path = drupal_get_path('module', 'teicontent') . "/js/drp_teichi.js";
+  $js_file = drupal_realpath($js_file_Path);
+
+$js=<<<JS
+function Chapter(node, start, end, book, jsonPageInfos, chapterId) {
+  this.start = start;
+  this.end = end;
+  this.node = node;
+  this.book = book;
+ //TODO: use lib to parse secure json! 
+  this.pageInfos = eval(jsonPageInfos);
+  this.chapterId = chapterId;
+}
+JS;
+  $node_infos = _teicontent_get_teichi_nodes_infos();
+  $nodeIDs = array_keys($node_infos);
+  if (count($nodeIDs) == 0) {
+    if (!file_put_contents($js_file, $js)) {
+      drupalt_set_message(t("Unable to write additional infos. Make shure the server process can write in the module folder.", "error"));
+    }
+  }
+  else {
+    $js .= "\nvar chapters = new Array(\n";
+    // get last index to ommit comma in last js line
+    $lastLine = $nodeIDs[count($nodeIDs)-1];
+    //dpm($node_infos);
+    foreach ($node_infos as $key => $value) {
+    // dpm("$key . $value");
+      $start  =  $value->startpage;
+      $end    =  $value->endpage;
+      $bookId =  isset($value->bid)?$value->bid:0;
+      $pInfo  =  isset($value->pageinfos)?$value->pageinfos:"";
+      $dId    =  $value->divid; 
+
+      $js .= " new Chapter({$key} ,{$start} ,{$end} ,{$bookId} , {$pInfo} ,\"{$dId}\" )" . (($key!==$lastLine)?", ":"") . "\n";
+    }
+    $js .= ");";
+    //file_put_contents($nodeInfoFile,$writeout);
+    if (!file_put_contents($js_file, $js)) {
+      drupal_set_message(t("Unable to write additional infos. Make shure the server process can write in the module folder.", "error"));
+    }
+  }
+
+}
+
+
+/**
+ * Gets all available TEIChi nodes
+ * @return result set containing TEIChi nodes
+ */
+function _teicontent_get_teichi_nodes() {
+  $format = TEICONTENT_INPUT_FORMAT_NAME;
+  $rows = db_query("select r.entity_id from {field_data_body} r where r.body_format = :format", array(':format' => $format));
+  $arr = array();
+  foreach ($rows as $row) {
+    $arr[] = $row->entity_id;
+  }
+  if (empty($arr)) {
+    return array();
+  }
+      //ToDO: fehlt was? wie geht das?
+  $query = db_select('node', 'n')
+   ->condition('n.nid', $arr, 'IN')
+   ->fields ('n', array('nid'))
+   ->fields ('n', array('vid'))
+   ->fields ('n', array('title'))
+   ->distinct();
+   $result = $query->execute();
+  return $result;
+}
+
+// find book infos for tei doc
+function _teicontent_get_book_for_node($nid) {
+  if (!module_exists('book') || !is_numeric($nid)) {
+    return 0;
+  }
+  else {
+    $result = db_query("SELECT b.bid FROM {book} b WHERE b.nid = :nid", array(':nid' => $nid));
+    $res = $result->fetch();
+    return (isset($res->bid)?$res->bid:0);
+  }
+}
+
+/**
+ * return nid,startPage,endPage,divID,bid for all teichi-nodes
+ *
+ */
+function _teicontent_get_teichi_nodes_infos() {
+  $query = "";
+  if (module_exists('book')) {
+    $query = "SELECT * FROM {teicontent_node_infos} t LEFT OUTER JOIN {book} b ON t.nodenr = b.nid";
+  }
+  else {
+    $query = "SELECT * FROM {teicontent_node_infos}";
+  }
+  $db_dump = db_query($query);
+  return $db_dump->fetchAllAssoc('nodenr');
+}
+
+function _teicontent_update_node_infos() {
+  $result = _teicontent_get_teichi_nodes();
+  $format=TEICONTENT_INPUT_FORMAT_NAME;
+  foreach ($result as $line) {
+    $theNode = node_load($line->nid);
+    $dom = new DomDocument();
+	drupal_set_message('reparse node nr: ' . $theNode->nid . ' with title: ' . $theNode->title, 'info');
+    $dom->loadXML($theNode->body[LANGUAGE_NONE][0]['value']);
+    $infos = _teicontent_get_content_infos($dom);
+	drupal_set_message('node nr: ' . $theNode->nid . ' parsed ');
+    _teicontent_save_node_info($line->nid, $infos['start_page'], $infos['end_page'], $infos['divID'],$infos['pageInfos']);
+    drupal_set_message('node nr: ' . $theNode->nid . ' stored .');
+  }
+}
+
+/**
+ * get a list of available font files
+ * @return array containing font file names without path
+ */
+function _teicontent_get_font_list() {
+  // get path for font upload location
+  $font_dir = drupal_realpath(TEICONTENT_FONT_DIR);
+  $font_files = array();
+  if (is_dir($font_dir)) {
+    if ($dh = opendir($font_dir)) {
+      while ($file = readdir($dh)) {
+        if (is_file($font_dir . '/' . $file) && preg_match("/(otf|ttf|woff)$/i", $file)) {
+          array_push($font_files, $file);
+        }
+      }
+    }
+  }
+  return $font_files;
+}
+
+/**
+* Extract n and xml:id from Pagebreak tag
+*
+* @param $pb
+*  A <pagebreak> XML Dom Node 
+*
+* @return
+*  array containing all pagebreaks   
+*  $pageInfos[$i] = array ('n' => $n, 'id' => $id)
+**/
+function _tei_content_getPBInfos($pb){
+
+$pbLength = $pb->length;
+
+ $pageInfos = array();
+ for($i=0; $i<$pbLength; ++$i){
+ $node =$pb->item($i);
+ $n =  $node->getAttribute('n');
+ $id=  $node->getAttribute('xml:id'); 
+  //TODO: facsimile and defaultvalues
+ $pageInfos[$i] = array ('n' => $n, 'id' => $id);
+
+  //print("\n node $i:" .$id. ",n:" .$n );
+  
+ }
+
+return $pageInfos;
+ 
+
+}
+
+
+/**
+ * map function to cut off extensions from font files
+ * and optionally show file type in braces
+ */
+function _teicontent_font_extension($value, $append_type = TRUE) {
+  if (isset($value) && trim($value) !== "") {
+    $needle = strrpos($value, ' .');
+    if ($needle) {
+      return drupal_substr($value, 0, $needle) . ($append_type?" (" . drupal_substr($value, $needle+1) . ")":"")  ;
+    }
+    else {
+      return $value;
+    }
+  }
+}
+
+/**
+ * return type for css definition
+ */
+function _teicontent_font_format($font) {
+  if ($font && trim($font) !== "") {
+    $format = "";
+    $needle = strrpos($font, ' .');
+    $extension = drupal_substr($font, $needle+1);
+    if ($extension === "ttf") {
+      return "TRUEtype";
+    }
+    elseif ($extension === "otf") {
+      return "opentype";
+    }
+    elseif ($extension === "woff") {
+      return "woff";
+    }
+    else {
+      return "";
+    }
+    return $format;
+  }
+  return NULL;
+}
+
+
+/**
+ * formats node types for
+ * options array in forms
+ */
+function _teicontent_get_node_types() {
+    $node_types = node_type_get_types();
+    $options_array = array();
+    foreach ($node_types as $key => $value) {
+      $options_array[$key] = $value->name;
+    }
+    return $options_array;
+}
+
+/**
+ * Return all available top level book nodes
+ */
+function _teicontent_get_books() {
+    $book_option_list = array();
+    $book_option_list['new'] = t("<create new book>");
+  // TRUE if the module is both installed and enabled
+  // hence we have a book table
+  if (module_exists('book')) {
+    // $result = db_query("SELECT n.nid, b.bid, n.title from  {book} b inner join {node} n on n.nid = b.nid where b.bid = b.nid;");
+    $rows = db_query("select b.bid from {book} b where b.bid = b.nid");
+    $arr = array();
+    foreach ($rows as $row) {
+      $arr[] = $row->bid;
+    }
+    if (empty($arr)) {
+      return $book_option_list;
+    }
+    //ToDO: fehlt was? wie geht das?
+    $query = db_select('book', 'b')
+    ->condition('f.body_format', 'teichi', '=')
+    ->condition('b.bid', $arr, 'IN')
+    ->fields('b', array('bid'))
+    ->fields('n', array('nid'))
+    ->fields ('n', array('title'))
+    ->distinct();
+    $query->innerJoin('node', 'n', 'n.nid = b.bid');
+    $query->innerJoin('field_data_body', 'f', 'f.entity_id = b.bid');
+    $result = $query->execute();
+    foreach ($result as $line => $book) {
+      $book_option_list[$book->nid] = $book->title;
+    }
+    return $book_option_list;
+  }
+  return $book_option_list;
+}
+
+function teicontent_node_submit($node) {
+    return;
+}
+
+
+function _teicontent_get_js_texts() {
+  $page_index_text = variable_get("teicontent_page_index_text", TEICONTENT_PAGE_INDEX_TEXT);
+  $reg_text = variable_get("teicontent_reg_text", TEICONTENT_REG_TEXT);
+  $orig_text = variable_get("teicontent_orig_text", TEICONTENT_ORIG_TEXT);
+  $goto_text = variable_get("teicontent_goto_text", TEICONTENT_GOTO_TEXT);
+  $input_not_number_text = variable_get("teicontent_inan_text", TEICONTENT_INAN_TEXT);
+  $page_not_assigned_text = variable_get("teicontent_pna_text", TEICONTENT_PAGE_NOT_ASSIGNED_TEXT);
+$js=<<<js
+var tNotANumber = "{$input_not_number_text}";
+var tPageNotAssigned = "{$page_not_assigned_text}";
+var tPageIndex = "{$page_index_text}";
+var tRegText = "{$reg_text}";
+var tOrigText = "{$orig_text}";
+var tGoto = "{$goto_text}";
+js;
+  return $js;
+}
+
+
+
+
+//################### helper functions form xmlcontent #######################
+
+
+/**
+ * Implements hook_node_validate
+ */
+function teicontent_node_validate($node, $form, &$form_state) {
+	// debug('call validate');
+      // check for PHP Dom support
+      if (!_teicontent_check_xml_support()) {
+        return;
+      }
+
+      $format = $node->body[LANGUAGE_NONE][0]['format'];
+
+      // Does the input format of this node use XML Content filter?
+      if (! _is_using_teicontent( $format ) ) {
+        return;
+      }
+
+      $settings = _teicontent_get_settings_for_filter_xml_format( $format );
+      // Get the validation type configured for this format
+      //$validation = variable_get(_get_xslt_schema_index(), 'none');
+	  $validation = 'none';
+	  if(isset($settings['validation'])) {
+        $validation = _teicontent_or( 
+                    $settings['validation'][_teicontent_get_xslt_schema_index()], 'none' 
+                    );
+      }
+      if ($validation == 'none') {
+        return;
+      }      
+      
+      $schema_path = drupal_get_path('module', 'teicontent'). '/' . $settings['validation'][_teicontent_get_schema_path_index()];
+  
+      if (!is_file($schema_path) && ($validation == 'xsd' or $validation == 'rng')) {
+        $schema_path = null;
+        watchdog( 'teicontent', t('Validation required but no schema file'), WATCHDOG_WARNING );
+      }
+      
+      // initialize libxml error handling
+      libxml_clear_errors();
+      libxml_use_internal_errors(true);
+
+      if (!_teicontent_validate($node->body, $validation, $schema_path)) {
+        form_set_error('body', t('XML Content: Invalid XML') . _teicontent_libxml_errors_string());
+      }
+      
+      libxml_clear_errors();
+}
+
+/**
+ * Validates the sent XML according to the specified validation type.
+ * @param xml
+ *   The XML content to be validated as a string
+ * @param validation
+ *   The validation type required (string): possible values are (none, wellformed,dtd,xsd,rng)
+ * @param schema_path
+ *   The path to the schema file
+ */
+function _teicontent_validate($xml, $validation = 'wellformed', $schema_path = null) {
+
+  if (!$xml) {
+    return false;
+  }
+
+  $xml_val = $xml[LANGUAGE_NONE][0]['value'];
+
+  $dom = new DomDocument('1.0', 'UTF-8');
+  switch ($validation) {
+    case 'none':
+      $ok = true;
+      break;
+    
+    case 'wellformed':
+      $ok = $dom->loadXML($xml_val);
+      break;
+    
+    case 'dtd':
+      if ($ok = $dom->loadXML($xml_val)) {
+        $ok = $dom->validate();
+      }
+      break;
+      
+    case 'xsd':
+      if ($ok = $dom->loadXML($xml_val)) {
+        $ok = $dom->schemaValidate($schema_path);
+      }
+      break;
+
+    case 'rng':
+      if ($ok = $dom->loadXML($xml_val)) {
+        $ok = $dom->relaxNGValidate($schema_path);
+      }
+      break;
+  }
+  return $ok;
+}
+
+
+
+
+/*
+ * Formats and returns libxml errors as a ul
+ */
+function _teicontent_libxml_errors_string() {
+  $errors = libxml_get_errors();
+  $errstr = '<ul>';
+  foreach ($errors as $error) {
+    $errstr .= '<li>';
+    switch ($error->level) {
+      case LIBXML_ERR_WARNING:
+        $errstr .= "<b>Warning $error->code</b>: ";
+        break;
+      case LIBXML_ERR_ERROR:
+        $errstr .= "<b>Error $error->code</b>: ";
+        break;
+      case LIBXML_ERR_FATAL:
+        $errstr .= "<b>Fatal Error $error->code</b>: ";
+        break;
+    }
+/*    if ($error->file) {
+      $return .= " in <b>$error->file</b>";
+    }*/
+    $errstr .= trim($error->message);
+    $errstr .= '</li>';
+  }
+  return $errstr . '</ul>';
+}
+
+/**
+ * Checks if the running PHP installation has Dom support.
+ * TODO: needs more advanced checks
+ */
+function _teicontent_check_xml_support() {
+  if (!class_exists('DomDocument')) {
+  // debug("no DomDocument c");
+  return false;
+  }
+  
+   if (!class_exists('XsltProcessor')) {
+  // debug("no XsltProcessor c");
+   return false;
+  }
+  
+  
+   if (!function_exists('libxml_get_errors')) {
+  // debug("no libxml_get_errors function");
+  return false;
+  }
+  
+  return true;
+ }
+
+
+ 
+/**
+ * Creates Paragraph.
+ */
+function _teicontent_p( $text ) {
+  return '<p>' . $text . '</p>';
+}
+
+/**
+ * Helper method: Given format id (system id for format created by user), find the
+ * input filter settings.
+ */
+ function _teicontent_get_settings_for_filter_xml_format( $format_id ) {
+ //debug("_get_settings_for_filter_xml_format:= param:" . $format_id);
+  $formats = filter_list_format( $format_id );
+  //debug('format: ', $formats);
+  //TODO:?
+  return $formats[ 'teicontent' ]->settings;
+}
+
+/**
+ * Given format id (system id for format created by user), returns
+ * true (1) if using xmlcontent module
+ */
+function _is_using_teicontent( $format_id ) {
+  $formats = filter_list_format( $format_id );
+  return $formats[ 'teicontent' ]->status = '1';
+}
+
+/**
+ * Use first of two values that is set.
+ */
+function _teicontent_or( $val1, $val2 ) {
+  return isset( $val1 ) ? $val1 : $val2;
+}
+
+/**
+ * Generic help description.
+ */
+function _teicontent_text_default_help() {
+  return _teicontent_p( _teicontent_text_description() ) . _tei_content_p( t('See the associated README.txt for information on how to get started with the XML Content module.') ); 
+}
+
+/**
+ * General description.
+ */
+function _teicontent_text_description() {
+  return t('Allows users to post XML node content and get it transformed through a configured XSLT script.');
+}
+
+/**
+ * Index used for settings array for custom input filter.
+ */
+function _teicontent_get_xslt_path_index() {
+  return 'teicontent_xslt_path';
+}
+
+/**
+ * Index used for settings array for custom input filter.
+ */
+function _teicontent_get_xslt_schema_index() {
+  return "teicontent_schema_type";
+}
+
+/**
+ * Index used for settings array for custom input filter.
+ */
+function _teicontent_get_schema_path_index() {
+  return "teicontent_schema_path";
+}
+
+
+
