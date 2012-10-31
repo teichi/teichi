@@ -1,0 +1,45 @@
+<html>
+<head><title>Test</title>
+<script type="text/javascript">
+// nodeid or bookid:{pw,ph,vw,vh,path}
+var dataConf = { 
+             "aaa3": {"pw":"200px",
+                  "ph":"200px",
+                  "vw":"400px",
+                  "vh":"600px",
+                   "path":"/drupal/sites/default/files/images/deepzoom/book1/"}
+               ,
+             "default": {"pw":"200px",
+                  "ph":"200px",
+                  "vw":"400px",
+                  "vh":"600px",
+                   "path":"/drupal/sites/default/files/images/deepzoom/book1/"}
+               
+ 
+     };
+
+
+
+console.dir(eval(dataConf));
+
+
+
+
+console.log(findConfig(viewerConf,"3"));
+console.log(findConfig(viewerConf,"none"));
+console.log(findConfig(viewerConf,null));
+console.log(findConfig(viewerConf,undefined));
+
+function findConfig( data, key) {
+  var record =  data[key];
+  return (record != null && record != undefined) ?  record  : data['dafault'];
+ }
+
+
+
+</script>
+</head>
+<body>
+</body>
+</html>
+

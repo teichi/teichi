@@ -1,0 +1,53 @@
+.block-teidownload{
+text-align:left;
+}
+.teidownload_Button {
+  margin: 0px 10px 0px 0px;
+  display: inline-block;
+  position: relative;
+  font-size: 0;
+  line-height: 0;
+  cursor: pointer;
+  width:26px;
+  height:26px;
+  border:none;
+
+}
+
+#teidownload_epub_Button {
+  background: url(../images/epub.png);
+}
+
+#teidownload_txt_Button {
+  background: url(../images/txt.png) ;
+}
+
+#teidownload_xml_Button {
+  background: url(../images/xml.png);
+}
+
+.teidownload_fieldset{
+  font-size: 10px ;
+  margin: 5px -10px 5px -10px;
+}
+
+.teidownload_fieldset .fieldset-wrapper{
+  padding:0px 3px 0px 3px;
+}
+
+.teidownload_format {
+  margin:3px 0px 3px 0px;
+}
+
+/* epub txt xml options*/
+.teidownload_format div{
+  display: inline; 
+  padding-right: 5px;
+}
+
+/* chapter list*/
+.teidownload_list { 
+  width:100%;
+  font-size: 10px ;
+  margin-top: 5px;
+}

@@ -1,0 +1,520 @@
+<?php
+
+/*
+*@file
+* Show images using Seadragon 
+*
+* Adds image preview and jquery-ui dialog to zoom and browse deepzoom images
+*/
+// logic goes here
+
+
+
+
+
+function tei_imageviewer_menu() {
+
+$items = array();
+
+//$items['admin/config/viewer'] = array(
+$items['admin/config/teichsettings/viewer'] = array(
+ 'title'            => "TEI Imageviewer",
+ 'description'      => 'Configure TEI Imageviewer',
+ 'position'         => 'right',
+ 'weight'           => -5,
+ 'page callback' => 'system_admin_menu_block_page',
+ 'access arguments' => array('administer site configuration'),
+ 'file' => 'system.admin.inc',
+ 'file path' => drupal_get_path('module', 'system'),
+  );
+
+/*
+// settings img paths
+$items['admin/config/viewer/imgpath'] = array(
+ 'title'            => 'TEI Imageviewer settings',
+ 'description'      => t('Settings for image paths.'),
+ 'page callback'    => 'drupal_get_form',
+ 'page arguments'   => array('tei_imageviewer_admin_settings'),
+ 'access arguments' => array('administer site configuration'),
+ 'type'             => MENU_NORMAL_ITEM,
+ 'file'             => 'tei_imageviewer.admin.inc',
+);
+
+
+
+// size
+$items['admin/config/viewer/size'] = array(
+ 'title'            => 'TEI Imageviewer settings',
+ 'description'      => 'Settings for behavior and apperance',
+ 'page callback'    => 'drupal_get_form',
+ 'page arguments'   => array('tei_imageviewer_size_form'),
+ 'access arguments' => array('administer site configuration'),
+ 'type'             => MENU_NORMAL_ITEM,
+ 'file'             => 'tei_imageviewer.admin.inc',
+);
+*/
+
+
+// from download
+
+  $items['admin/config/teichsettings/viewer/books_settings'] = array(
+    'title' => t('Imageviewer settings per book'),
+    'description' => t('Set imageviewer and imagepreview settings for each book.') ,
+    'page callback' => 'tei_imageviewer_books_configuration',
+    'access arguments' => array('administer users'),
+    'weight' => 2,
+    'type' => MENU_NORMAL_ITEM ,
+  );
+  
+   $items['admin/config/teichsettings/viewer/books_settings/edit/%'] = array(
+    'title' => t('Edit book settings'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('tei_imageviewer_book_settings_form'),
+    'access arguments' => array('administer users'),
+    'file' => 'tei_imageviewer.admin.inc',
+    'weight' => 2,
+  );
+
+
+
+   $items['admin/config/teichsettings/viewer/parse_teinodes'] = array(
+    'title' => t('Reparse all TEI-Nodes'),
+    'description' => t('Rebuild the information structure for books and pages that is used by the TEI Imageviewer.') ,
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('tei_imageviewer_parse_teinodes_form'),
+    'access arguments' => array('administer users'),
+    'file' => 'tei_imageviewer.admin.inc',
+    'weight' => 2,
+  );
+
+
+// TODO: create a mini useguide 
+$items['admin/config/teichsettings/viewer/tool'] = array(
+   'title' => t('DeeZoom Information. TODO'),
+   'description' => t('A Guide to generate DeepZoom images.') ,
+   'page callback' => 'tei_imageviewer_deep_zoom_infos',
+   //'page arguments' => array(''),
+   'access arguments' => array('administer users'),
+   'type' => MENU_NORMAL_ITEM ,
+    'weight' => 2,
+  );
+
+
+
+
+//teidownload_book_settings_form
+
+
+//end
+
+
+return $items;
+}
+
+/**
+* hook_delete_node is invoked if a node gets deleted.
+* If the deleted node is a tei book, remove also the imageviewersettings from db.
+*/
+function tei_imageviewer_node_delete($node){
+/* 
+ // broken: returns null?
+ $books = _teidownload_get_books();
+
+ debug( "Delete node:". $node->nid . ". Current tei books:");
+ debug($books);
+ 
+ if($books == null){
+  return;
+ }
+
+ // delete settings if exsits
+ foreach ($books as $book) {
+   if($book->nid == $node->nid){
+       tei_imageviewer_delete_settings($node->nid);
+       break;
+     }
+  }*/
+
+// try to delete book settings if exsits:
+tei_imageviewer_delete_settings($node->nid);
+
+} 
+
+/**
+** delete imageviewersettings for a specific book from the variable table
+*/
+function tei_imageviewer_delete_settings($id) {
+ //http://api.drupal.org/api/drupal/includes--bootstrap.inc/function/variable_del
+ variable_del('tei_imageviewer_pw_'.$id);
+ variable_del('tei_imageviewer_ph_'.$id);
+ variable_del('tei_imageviewer_vw_'.$id);
+ variable_del('tei_imageviewer_vh_'.$id);
+ variable_del('tei_imageviewer_imagepath_' . $id);
+
+ drupal_set_message( 'TEI Imageviewer: '. t('Deleting settings for book: ') . $id, 'status');
+
+}
+
+
+// store tei_imageviewer settings as json
+
+function tei_imageviewer_settings_as_json(){
+// get all books
+// all variables
+// store as json to file
+  
+ $books = _teidownload_get_books();
+ //debug('start json export');
+ // use default settings for new books
+ $data = array();
+ 
+ if($books != NULL){
+  foreach ($books as $book) {
+    $data[$book->bid] = array( 
+      "pw"  => variable_get('tei_imageviewer_pw_' . $book->bid,  variable_get('tei_imageviewer_pw_default')),
+      "ph"  => variable_get('tei_imageviewer_ph_' . $book->bid,  variable_get('tei_imageviewer_ph_default')),
+      "vw"  => variable_get('tei_imageviewer_vw_' . $book->bid,  variable_get('tei_imageviewer_vw_default')),
+      "vh"  => variable_get('tei_imageviewer_vh_' . $book->bid,  variable_get('tei_imageviewer_vh_default')), 
+      "path"=> variable_get('tei_imageviewer_imagepath_' . $book->bid,  variable_get('tei_imageviewer_imagepath_default')) 
+             );
+    }
+  }
+ // default conf
+ $data['default'] = array( 
+  "pw"   => variable_get('tei_imageviewer_pw_default') ,
+  "ph"   => variable_get('tei_imageviewer_ph_default') ,
+  "vw"   => variable_get('tei_imageviewer_vw_default') ,
+  "vh"   =>variable_get('tei_imageviewer_vh_default') ,
+  "path" => variable_get('tei_imageviewer_imagepath_default')
+ );
+
+
+
+//debug("array:" . $data);
+$json = json_encode($data, JSON_FORCE_OBJECT);
+//debug("json:" . $json);
+
+
+$js=<<<JS
+var viewerConf = eval($json);
+// test
+console.dir(viewerConf);
+/*console.log(findConfig(viewerConf,"3"));
+console.log(findConfig(viewerConf,"none"));
+console.log(findConfig(viewerConf,null));
+console.log(findConfig(viewerConf,undefined));
+*/
+
+/**
+* return actual imagaviewerconfig
+**/
+function getConfig(key) {
+ return findConfig(viewerConf,key);
+}
+
+
+/**
+*
+*find config
+**/
+function findConfig(data, key) {
+  var record =  data[key];
+//  return (record == null || record == undefined) ? data['default'] : record;
+  if (record == null)
+      record = data.default;
+
+  else if (record == undefined)
+       record =  data.default;
+ 
+ return record;
+ }
+
+JS;
+
+
+// write js file
+$js_file_Path = drupal_get_path('module', 'tei_imageviewer') . "/js/viewer-conf.js";
+  $js_file = drupal_realpath($js_file_Path);
+ if (!file_put_contents($js_file, $js)) {
+      drupal_set_message(t("Unable to write additional infos. Make shure the server process can write in the module folder.", "error"));
+    }
+ else {
+  drupal_set_message( t('TEI Imageviewer: updated configurationdata (viewer-conf.js) for frontend.'), 'status');
+  }
+
+}
+
+
+
+
+/**
+ * Create the books-Table of all books that can be configure
+ */
+function tei_imageviewer_books_configuration() {
+  $header = array(t('Book Name'), t('Action'));
+  // Teichi books. if the TEI-document dose not blong to a book, this can't be configure
+  $books = _teidownload_get_books();
+  $row = array();
+  if ($books) {
+    foreach ($books as $book) {
+     $row[] = array(stripslashes($book->title) . ' ' , "<a href=" . (url('admin/config/teichsettings/viewer/books_settings/edit/') . $book->bid ) . ">" . t('Configure settings') . "</a>");
+    }
+  }
+  // add default settings
+  
+ $row[] = array(t('Defaultsettings') , "<a href=" . (url('admin/config/teichsettings/viewer/books_settings/edit/') . 'default' ) . ">" . t('Configure settings') . "</a>");
+
+  $out = theme('table', array('header' => $header, 'rows' => $row));
+  tei_imageviewer_settings_as_json();
+  return $out;
+
+ 
+ 
+}
+
+function tei_imageviewer_deep_zoom_infos() {
+//tei_imageviewer_help();
+ $out = 'TODO ' . l("Module help", "admin/help/tei_imageviewer", array()) ;
+ return $out;
+
+}
+
+
+
+
+
+/**
+ * Implements hook_help()
+ */
+function tei_imageviewer_help($path, $arg) {
+  /*$output = '';  
+  switch ($path) {
+    case "admin/help#viewer":
+      $output = '<p>'.  t("Imageviewer using Seadragon") .'</p>';
+      break;
+  }
+  return $output;*/
+/*TODO: Debug only*/
+// menu_rebuild() ;
+ 
+if ($path == 'admin/help#tei_imageviewer') {
+   $output =  '<p>'. t('The TEI Imageviewer powerd by Seadragon and DeepZoom: ') .  l(t('DeepZoom homepage'), 'http://www.microsoft.com/silverlight/deep-zoom/' ) 
+            .'<br>'.t('Download a java tool that generates DeepZoom images: ') .  l(t('DeepZoom tool'),  drupal_get_path('module', 'tei_imageviewer') . '/java/DeepZoom-Tool.zip') . '</p>';
+               
+
+  return $output;
+ }
+
+} 
+
+
+/**
+** hook_init: add the  required js libraries  
+**/
+function tei_imageviewer_init() {
+ // if teichi
+ /*
+ drupal_add_library('system', 'ui.dialog');
+ drupal_add_library('system', 'jquery.cookie');
+ drupal_add_library('system', 'collapse');
+
+ //THINK: if the ms Licence violate the drupal ruls that all code should be (l)GPL
+ // use an external version of sedragon js file
+// drupal_add_js('http://seadragon.com/ajax/0.8/seadragon-min.js', 'external');
+ drupal_add_js(drupal_get_path('module', 'tei_imageviewer') .'/js/seadragon-min.js');
+ //scripts[] = js/viewer-conf.js
+ drupal_add_js(drupal_get_path('module', 'tei_imageviewer') .'/js/viewer-conf.js');
+ //scripts[] = js/hover-preview.js
+ drupal_add_js(drupal_get_path('module', 'tei_imageviewer') .'/js/hover-preview.js');
+ // scripts[] = js/seadragon-book.js
+ drupal_add_js(drupal_get_path('module', 'tei_imageviewer') .'/js/seadragon-book.js');
+ //scripts[] = js/jquery-ui-1.8.15.custom.min.js 
+ 
+ // store path to images for seadragon gui
+ $seadragonImagePath =  file_create_url( drupal_get_path('module', 'tei_imageviewer') . '/img/');  
+ drupal_add_js('var seadragonImagePath =  \'' .$seadragonImagePath. '/\';' , 'inline');
+
+ */
+  
+}
+
+
+
+/**
+* Provide a drupal block for the deepzoom image viewer and a hover preview function
+* defaultsettings:
+* enable block on siedebar for all nodes
+*
+*/
+function  tei_imageviewer_block_info() {
+  $blocks = array();
+  $blocks['tei_imageviewer'] = array(
+   'info'    => t('TEI imageviewer'),
+   'chache'  => 4,
+   'status'  => 1,
+   'region'  => 'sidebar_first',
+   'weight'  => 1,
+   'pages'   => 'node/*',
+   'visibility' => BLOCK_VISIBILITY_LISTED,
+   'title'   => t('viewer'),
+  );
+ 
+
+ return $blocks;
+ }
+
+
+function tei_imageviewer_block() {
+//debug("in block".drupal_get_library());
+//drupal_add_library('system', 'ui.dialog');
+// moved to _init()
+}
+
+function tei_imageviewer_block_view($block_name='') {
+  $block = array();
+
+
+ // reject non nodes
+ if (arg(0) != 'node' || !is_numeric(arg(1))) {
+   return $block;
+  }
+  
+  $nid = arg(1);
+
+  switch ($block_name) {
+    case  'tei_imageviewer' :
+       // show block only on tei books
+      $teichi_nodes = _teicontent_get_teichi_nodes();
+      foreach ($teichi_nodes as $teichi_nid) {
+       // if ($nid == $teichi_nid && user_access('use teidownload') ) {
+        if ($nid == $teichi_nid->nid) {
+//               $block['subject'] = t('image viewer'); // default
+               $block['subject'] = ('facsimilés'); 
+            $block['content'] = viewer_contents();
+         }
+      }
+     break;
+  }
+
+  return $block;
+ }
+
+
+function tei_imageviewer_block_form($form, &$form_state) {
+  $form = array();
+    $form['viewerBlock'] = array(
+      '#type' => 'submit',
+      '#name' => 'openViewer',
+      '#title'=> t('start Viewer'),
+      '#button_type' => 'image',
+      '#attributes' => array('class' => array('tei_imageviewer'), 'id' => array('openViewer')),
+      '#weight' => 0,
+      '#CauseValidation ' => 'FALSE',
+    );
+  
+ /************* Viewer Options ****************/
+  $form['viewerOptions'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Preference'),
+    '#weight' => 1,
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+    '#attributes' => array('class' => array('tei_imageviewer')),
+  );
+  
+  /************* enable viewer and preview ****************/
+   
+  $form['advanced']['sefile_format'] = array(
+    '#type' => 'checkboxes',
+    '#title' => 'testit', 
+    '#options' => $file_formats,
+    '#options' => array(
+    		'usePreview' => t('enable Preview'),
+	  	'useViewer' => t('enable Viewer')),
+        '#attributes' => array('class' => array('tei_imageviewer')),
+    '#weight' => 0,
+  );
+
+ /************** open seadragon ********/
+
+ 
+  $form['viewerOptions']['openSeadragon'] = array(
+    '#type' => 'button',
+    '#name' => 'openFirstPage',
+    '#attributes' => array('onClick' => 'Drupal.openFirstPage()'),
+    '#weight' => 5,
+  );
+
+   return $form;
+
+}
+
+function _tei_imageviewer_add_js(){
+
+ drupal_add_library('system', 'ui.dialog');
+ drupal_add_library('system', 'jquery.cookie');
+ drupal_add_library('system', 'collapse');
+
+ //THINK: if the ms Licence violate the drupal ruls that all code should be (l)GPL
+ // use an external version of sedragon js file
+// drupal_add_js('http://seadragon.com/ajax/0.8/seadragon-min.js', 'external');
+ drupal_add_js(drupal_get_path('module', 'tei_imageviewer') .'/js/seadragon-min.js');
+ //scripts[] = js/viewer-conf.js
+ drupal_add_js(drupal_get_path('module', 'tei_imageviewer') .'/js/viewer-conf.js');
+ //scripts[] = js/hover-preview.js
+ drupal_add_js(drupal_get_path('module', 'tei_imageviewer') .'/js/hover-preview.js');
+ // scripts[] = js/seadragon-book.js
+ drupal_add_js(drupal_get_path('module', 'tei_imageviewer') .'/js/seadragon-book.js');
+ //scripts[] = js/jquery-ui-1.8.15.custom.min.js 
+ 
+ // store path to images for seadragon gui
+ $seadragonImagePath =  file_create_url( drupal_get_path('module', 'tei_imageviewer') . '/img/');  
+ drupal_add_js('var seadragonImagePath =  \'' .$seadragonImagePath. '/\';' , 'inline');
+
+
+}
+
+
+/**
+Creates the HTML (buttons and divs) for blocks content
+**/
+function viewer_contents() {
+ _tei_imageviewer_add_js();
+//  $dummyImg =   base_path() . drupal_get_path('module', 'tei_imageviewer') . '/img/dummy.png' ;
+//  $button_text = t('open first page');
+//TODO: use moduls interface to edit labels
+  $button_text        = t('afficher première page');
+  $legend_text        = t('options');
+//  $description_text = t('Edit Options');
+  $description_text   = ''; 
+  $save_text          ='enregistrer';
+  //TODO: use tempelate
+  $content = "
+
+ <div id='openViewer'>
+       <input type='button' value='{$button_text}' class='form-submit'/>
+    </div>
+
+ <fieldset id='fieldset-id' class='collapsible'>
+ <legend><span class='fieldset-legend'>{$legend_text}</span></legend>
+ <div class='fieldset-wrapper'>
+        <div class='fieldset-description'>{$description_text}</div>
+	 <div id='viewerConf'>
+	    <input type='checkbox' name='usePreview' value='true' checked='checked' class='form-submit' \>activer aperçu<br>
+	    <input hidden='hidden' type='checkbox' name='useViewer' value='true'  checked='checked'class='form-submit' \><br>
+	    <input type='button' value='{$save_text}'class='form-submit'/>
+	   </div>
+</div>
+</fieldset>
+
+
+   <div class='tooltip'> 
+     <img class='previewIMG'  alt='open in seadragon'> </img>
+   </div>
+   <div id='container'> </div>
+    ";
+   return $content;
+  }
+
+
+

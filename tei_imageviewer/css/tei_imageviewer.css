@@ -1,0 +1,46 @@
+
+/** #### Tooltip  #### */
+.tooltip {
+z-index: 5;
+// width: 200px;
+// height: 300px;
+position: relative;
+left: 0px;
+top: 0px;
+ }
+
+img.previewIMG{
+ width: 333px;
+ height: 300px;
+display:none;
+border-width: 3px;
+border-style: solid;
+border-color: black;
+z-index: 5;
+}
+
+/*### seadragon ####*/
+
+.container
+      {
+        width: 10px;
+        height: 600px;
+        background-color: black;
+        border: 1px solid black;
+        color: white;  /* for error messages, etc. */
+//	display:none;
+      }
+      .overlay
+      {
+        font-weight: bold;
+        margin-top: 4px;
+        margin-right: 4px;
+      }
+      .control{
+ 	 padding-left:10px;
+ 	 padding-right:10px;
+	}
+
+}
+
+ 

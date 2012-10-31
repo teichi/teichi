@@ -1,0 +1,4 @@
+*.swap
+
+*.DS_Store
+java/

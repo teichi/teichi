@@ -1,0 +1,1344 @@
+<?php
+// $Id$
+/**
+ * Implementation of hook_help().
+ */
+function teidownload_help($path, $arg) {
+ $output = '';
+  switch ($path) {
+    case 'admin/help#teidownload':
+     $output = '<p>' . t('The TEI Download module allows you to download the ePUB-Version') . '</p>';
+     return $output;
+     break;
+  }
+}
+
+/**
+ * Implementation of hook_permission()
+ */
+function teidownload_permission() {
+  return array(
+    'use teidownload' => array(
+      'title' => t('Use TEI Download'),
+      'description' => t('Allow users to use download block')
+    ),
+  );
+} 
+
+/**
+ * Implementation of hook_menu()
+ */
+ 
+ function teidownload_menu() {
+  $items = array();
+   /*
+   $items['admin/config/teichsettings'] = array(
+   'title' => 'TEICHI Settings',
+   'description' => 'Configure TEICHI modules',
+   'position' => 'left',
+   'page callback' => 'system_admin_menu_block_page',
+   'access arguments' => array('access administration pages'),
+   'file' => 'system.admin.inc',
+   'file path' => drupal_get_path('module', 'system'),
+  );
+  */
+  
+  $items['admin/config/teichsettings/teidownload'] = array(
+   'title' => 'TEI Download',
+   'description' => 'Configure TEI Download',
+   'position' => 'left',
+   'access arguments' => array('access administration pages'),
+   'page callback' => 'drupal_get_form',
+    'page arguments' => array('teidownload_block_settings_form'),
+    'file' => 'teidownload.admin.inc',
+  );
+  
+  $items['admin/config/teichsettings/teidownload/settings'] = array(
+    'title' => 'Block texts',
+    'description' => 'Configure the TEI Download module',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('teidownload_block_settings_form'),
+    'access arguments' => array('administer users'),
+    'file' => 'teidownload.admin.inc',
+    'weight' => 0,
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+  );
+  
+   $items['admin/config/teichsettings/teidownload/books_settings'] = array(
+    'title' => 'Book settings',
+    'description' => 'Book settings and cover upload',
+    'page callback' => '_teidownload_books_configuration',
+    'access arguments' => array('administer users'),
+    'weight' => 2,
+    'type' => MENU_LOCAL_TASK ,
+  );
+  
+   $items['admin/config/teichsettings/teidownload/books_settings/edit/%'] = array(
+    'title' => 'Edit book settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('teidownload_book_settings_form'),
+    'access arguments' => array('administer users'),
+    'file' => 'teidownload.admin.inc',
+  );
+  
+  $items['admin/config/teichsettings/teidownload/books_settings/cover/%'] = array(
+    'title' => 'Edit book settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('teidownload_book_cover_upload_form'),
+    'access arguments' => array('administer users'),
+    'file' => 'teidownload.admin.inc',
+  );
+  return $items;
+}
+
+/**
+ * Create the books-Table of all books that can be configure
+ */
+function _teidownload_books_configuration() {
+  $header = array(t('Book Name'), t('Action'));
+  // Teichi books. if the TEI-document dose not blong to a book, this can't be configure
+  $books = _teidownload_get_books();
+  $row = array();
+  if ($books) {
+    foreach ($books as $book) {
+     $row[] = array(stripslashes($book->title) . ' ' , "<a href=" . (url('admin/config/teichsettings/teidownload/books_settings/edit/') . $book->bid ) . ">" . t('Configure settings') . "</a>" . " | <a href=" . (url('admin/config/teichsettings/teidownload/books_settings/cover/') . $book->bid ) . ">" . t('Cover upload') . "</a>" );
+    }
+  }
+  $out = theme('table', array('header' => $header, 'rows' => $row));
+  return $out;
+}
+
+/**
+ * Implementation of hook_block_info()
+ */
+function teidownload_block_info() {
+  // The required block information is a block description, which is shown
+  // to the site administrator in the list of possible blocks.
+  $blocks['teidownload'] = array(
+    'info' => 'TEI Download',
+    //'status' => TRUE,
+    //'region' => 'left',
+    //'cache' => DRUPAL_CACHE_GLOBAL,
+    //'weight' => 0,
+  );
+  return $blocks;
+}
+
+/**
+ * Implementation of hook_block_view()
+ */
+function teidownload_block_view($delta = '') {
+  // Only show if nid blong to teichi-node
+  if (arg(0) == 'node' && is_numeric(arg(1))) {
+    $nid = arg(1);
+    // get all teichi nodes
+    $teichi_nodes = _teicontent_get_teichi_nodes();
+    foreach ($teichi_nodes as $line) {
+      $teichi_nid = $line->nid;
+      if ($nid == $teichi_nid && user_access('use teidownload') ) {
+        $block['content'] = drupal_get_form("teidownload_download_form");
+        return $block;
+      }
+    }
+  }
+}
+
+/**
+ * Download form to show in the block
+ */
+function teidownload_download_form($form, &$form_state) {
+  $form = array();
+  $bid = _teicontent_get_book_for_node(arg(1));
+  $arr = variable_get('teidownload_download_setting_' . $bid, array('epub' => 'epub', 'txt' => 'txt', 'xml' => 'xml'));
+  if (!empty($arr['epub'])) {
+    $form['epub'] = array(
+      '#type' => 'submit',
+      '#name' => 'epub_download_button',
+      '#button_type' => 'image',
+      '#attributes' => array('class' => array('teidownload_Button'), 'id' => array('teidownload_epub_Button')),
+      '#weight' => 0,
+      '#CauseValidation ' => 'FALSE',
+    );
+  }
+  
+  if (!empty($arr['txt'])) {
+    $form['txt'] = array(
+      '#type' => 'submit',
+      '#name' => 'txt_download_button',
+      '#button_type' => 'image',
+      '#attributes' => array('class' => array('teidownload_Button'), 'id' => array('teidownload_txt_Button')),
+    );
+  }
+  
+  if (!empty($arr['xml'])) {
+    $form['xml'] = array(
+      '#type' => 'submit',
+      '#name' => 'xml_download_button',
+      '#button_type' => 'image',
+      '#attributes' => array('class' => array('teidownload_Button'), 'id' => array('teidownload_xml_Button')),
+    );
+  }
+ 
+ /************* Advanced download ****************/
+  $form['advanced'] = array(
+    '#type' => 'fieldset',
+    '#title' => variable_get('teidownload_advanced_download_link', 'Advanced download'),
+    '#weight' => 1,
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+    '#attributes' => array('class' => array('teidownload_fieldset')),
+  );
+  
+  /************* file_format ****************/
+  $file_formats = array();
+  if (!empty($arr['epub'])) {
+    $file_formats['epub'] = variable_get('teidownload_epub_option', 'epub');
+  }
+  
+  if (!empty($arr['txt'])) {
+    $file_formats['txt'] = variable_get('teidownload_txt_option', 'txt');
+  }
+  
+   if (!empty($arr['xml'])) {
+    $file_formats['xml'] = variable_get('teidownload_xml_option', 'xml');
+  }
+  
+  $form['advanced']['file_format'] = array(
+    '#type' => 'radios',
+    '#title' => variable_get('teidownload_file_format', 'File format'),
+    '#options' => $file_formats,
+    '#default_value' => key($file_formats), // first key of the array
+    '#attributes' => array('class' => array('teidownload_format')),
+    '#weight' => 0,
+  );
+  
+  /************* text_variant ****************/
+  $form['advanced']['text_variant'] = array(
+    '#type' => 'radios',
+    '#title' => t(variable_get('teidownload_text_variant', 'Text variant')),
+    '#options' => array(
+        'corr_reg' => variable_get('teidownload_corr_reg_option', 'Regularized'),
+        'sic_orig' => variable_get('teidownload_sic_orig_option', 'Original')),
+    '#default_value' => 'corr_reg',
+    '#weight' => 1,
+    //'#attributes' => array('onClick' => 'CitizenClick()'),
+  );
+  
+  /************* notes ****************/
+  $form['advanced']['notes'] = array(
+    '#type' => 'radios',
+    '#title' => variable_get('teidownload_notes', 'Notes'),
+    '#options' => array(
+        'author' => variable_get('teidownload_author_option', 'Author'),
+        'author_editor' => variable_get('teidownload_author_editor_option', 'Author & Editor')),
+    '#default_value' => 'author',
+    //'#attributes' => array('onClick' => 'CitizenClick()'),
+    '#weight' => 2,
+  );
+  
+  /************* chapter_list ****************/
+  if ($bid == 0) { //no Book
+    $nid = arg(1);
+    $node = node_load($nid);
+    $tei_doc = $node->body[$node->language][0]['value'];
+    $chapter_name = _teidownload_get_chapter_name($nid);
+    $chapters = array(arg(1) => $chapter_name);
+  } 
+  else {
+    $chapters = _teidownload_get_book_chapters($bid);
+  }
+  
+  $form['advanced']['chapter_list']=array(
+    '#type' => 'select',
+    '#title' => variable_get('teidownload_chapters', 'Chapters'),
+    '#options' => $chapters ,
+    '#multiple' => TRUE,
+    '#attributes' => array('size' => array(4), 'class' => array('teidownload_list')),
+    '#weight' => 3,  
+  );
+    
+  /************* download_form ****************/
+  $form['advanced']['download_form'] = array(
+    '#type' => 'radios',
+    '#title' => variable_get('teidownload_download_form', 'Download form'),
+    '#options' => array(
+    'single' => variable_get('teidownload_single_option', 'Single file for all chapters'),
+    'separate' => variable_get('teidownload_separate_option', 'Separate chapter files')),
+    '#default_value' => 'single',
+    '#weight' => 4,
+  );
+  
+  $path = drupal_get_path('module', 'teidownload') . '/css/block_style.css';
+  $form['#attached']['css'][] = $path ;
+    
+  /************* submit ****************/
+  $form['advanced']['download'] = array(
+    '#type' => 'submit',
+    '#name' => 'advanced_download_button',
+    '#value' => variable_get('teidownload_download_button', 'Download'),
+    '#weight' => 5,
+  );
+  
+   return $form;
+}
+
+/**
+ * validate the download form
+ */
+function teidownload_download_form_validate($form, &$form_state) {
+  $button = $form_state['clicked_button']['#value'];
+  $chapters = $form_state['values']['chapter_list'];
+  if ($button == "Download" && count($chapters)==0) {
+     form_set_error('chapter_list', t('Chapters field is required.'));
+  }
+}
+
+/**
+ * Download form submit
+ */
+function teidownload_download_form_submit($form, &$form_state) {  
+  $nid = arg(1);
+  $button = $form_state['clicked_button']['#name'];
+  switch ($button) {
+    case 'epub_download_button':
+      _teidownload_download_chapter_as_epub($nid);
+      break;
+    case 'txt_download_button':
+      _teidownload_download_chapter_as_txt($nid);
+      break;
+    case 'xml_download_button':
+      _teidownload_download_chapter_as_xml($nid);
+      break;
+    case 'advanced_download_button':
+      _teidownload_advanced_download($nid, $form_state);
+      break;
+  }
+}
+
+/**
+ * Download the epub version of one Chapter
+ */
+function _teidownload_download_chapter_as_epub($nid) {
+  $zipfile = _teidownload_convert_chapter_to_epub($nid, "corr_reg", "author");
+  // Download zip file.
+  $zipname = _teidownload_get_chapter_name($nid) . '.epub';
+  $zipname = utf8_decode($zipname);
+  header('Content-Type: application/epub'); // open with
+  // surround the filename with double quotes, otherwise you'll have problems in Firefox 
+  // as soon as there's a space in the filename
+  header("Content-Disposition: attachment; filename=\"" . $zipname . "\""); //Filename
+  header('Content-Length: ' . filesize($zipfile));
+  readfile($zipfile);
+  unlink($zipfile);
+  exit;
+}
+
+/**
+ * convert tei doc to epub
+ */
+function _teidownload_convert_chapter_to_epub($nid, $text_variant, $notes) {
+  // Create zip file.
+  $zipfile = tempnam(file_directory_temp(), 'epub');
+  $zip = new ZipArchive();
+  if (!$zip->open($zipfile, ZIPARCHIVE::CREATE | ZIPARCHIVE::OVERWRITE)) {
+    form_set_error('', 'Error! can not open zip file');
+    return;
+  }    
+  
+  /**
+   * add mimetype
+   * mimetype - tells a reader/operating system what's in here
+   */
+  if ($zip->addFromString('mimetype', 'application/epub+zip') == FALSE) {
+    form_set_error('', 'Error! can not create mimetype');
+    return;
+  }
+
+  /** 
+   * add container
+   * META-INF folder - This folder contains, at minimum, the container.xml file, 
+   * which tells the reader software where in the zip file to find the book.
+   */
+  $container = '<?xml version="1.0" encoding="UTF-8"?>
+                <container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">
+                <rootfiles>
+                        <rootfile full-path="OPS/content.opf" media-type="application/oebps-package+xml"/>
+                    </rootfiles>
+                </container>';
+  if ($zip->addFromString('META-INF/container.xml', $container) == FALSE) {
+        form_set_error('Error! can not create container.xml');
+        return;
+  }
+  
+  /**
+   * add book.css
+   */
+  $css = _teidownload_get_css($text_variant, $notes);
+    if ($zip->addFromString('OPS/book.css', $css) == FALSE) {
+      form_set_error('Error! can not create book.css');
+      return;
+  }
+   
+  /**
+   * opf-file that lists what's in the zip file
+   */
+  $node = node_load($nid);
+  // tei_doc as String
+  $tei_doc = $node->body[$node->language][0]['value']; 
+  // book title
+  $book_title = _teidownload_get_book_title($nid);
+  // book author
+  $author = _teidownload_get_book_author($nid);
+ 
+  $opf = _teidownload_get_opf($book_title, $author);
+  
+  /**
+   *This is the table of contents. 
+   *This file controls what shows up in the left Table of Contents pane in Digital Editions
+   */
+  $ncx = _teidownload_get_ncx();
+  
+  // First Page
+  $bid = _teicontent_get_book_for_node($nid);
+  $arr = variable_get('teidownload_first_page_' . $bid, array());
+  if (!empty($arr['cover'])) {
+    $result = db_query("SELECT image_path FROM {teidownload_books} t WHERE t.bid = :bid", array(':bid' => $bid));
+    $record = $result->fetch();
+    if (!empty($record)) {
+      $image_path = $record->image_path;
+      $image_path = drupal_realpath($image_path);
+      if (file_exists($image_path)) {
+        // Cover name in zip
+        $cover = 'cover.' . end(explode('.', $image_path));
+        if ($zip->addFile($image_path, 'OPS/' . $cover) == FALSE) {
+          form_set_error('Error! can add cover to zip');
+          return;
+        }
+        $first_page = _teidownload_get_first_page($cover);
+        if ($zip->addFromString('OPS/title.xhtml', $first_page) == FALSE) {
+          form_set_error('Error! can add title.xhtml to zip');
+          return;
+        }
+        _teidownload_create_manifest_item($opf, 'title');
+        // create opf spine itemref
+        _teidownload_create_spine_itemref($opf, 'title');
+        // create ncx navpoint item
+        _teidownload_create_navPoint($ncx, 'navpoint-1', '1', 'Title Page', 'title.xhtml');
+      }
+    }
+  }
+  
+  // second page
+  if (($second_page = _teidownload_get_second_page($nid, $text_variant, $notes)) == TRUE) {
+    $path = 'OPS/book_info.xhtml';
+    $zip->addFromString($path, $second_page);
+    _teidownload_create_manifest_item($opf, 'book_info');
+    //create opf spine itemref
+    _teidownload_create_spine_itemref($opf, 'book_info');
+    //create ncx navpoint item
+    _teidownload_create_navPoint($ncx, 'navpoint-2', '2', 'Book Information', 'book_info.xhtml');
+  }
+ 
+  // xhtml as String
+  $path_to_xsl = drupal_get_path('module', 'teidownload') . '/xsl/tei.xsl';
+  $xhtml = _teidownload_transform($tei_doc, $path_to_xsl);
+  // save xhtml as a file in zip
+  $fileName = 'chapter.xhtml';
+  $path = 'OPS/' . $fileName;
+  $zip->addFromString($path, $xhtml);
+  // create opf manifest item
+  _teidownload_create_manifest_item($opf, 'chapter');
+  // create opf spine itemref
+  _teidownload_create_spine_itemref($opf, 'chapter');
+  // create ncx navpoint item
+  $title = _teidownload_get_chapter_name($nid, $text_variant) ;
+  //$title = $elements->item(0)->nodeValue;
+  _teidownload_create_navPoint($ncx, 'navpoint-3', '3', $title, $fileName);
+  
+  // add opf to zip
+  $opf = $opf->saveXML(); // dom to String 
+  $zip->addFromString('OPS/content.opf', $opf);
+   
+  // add ncx to zip
+  $ncx = $ncx->saveXML(); // dom to String 
+  $zip->addFromString('OPS/content.ncx', $ncx);
+  $zip->close();
+  return $zipfile;
+}
+
+/**
+ * Download the plaintext version of one Chapter
+ */
+function _teidownload_download_chapter_as_txt($nid) {
+  $node = node_load($nid);
+  // tei_doc as String
+  $tei_doc = $node->body[$node->language][0]['value'];
+  $path_to_xsl = drupal_get_path('module', 'teidownload') . '/xsl/text_corr_reg_author.xsl';
+  $txt = _teidownload_transform($tei_doc , $path_to_xsl);
+  $txt = utf8_decode($txt);
+  $txt = str_replace("\n", "\r\n", $txt);
+  $tempFile = tempnam('tmp', 'tempname');
+  $file = fopen($tempFile , 'w');
+  fputs($file, $txt);
+  fclose($file);
+  // Dateiname
+  $filename = _teidownload_get_chapter_name($nid) . '.txt';
+  $filename = utf8_decode($filename);
+  header("Content-Type: text/plain"); 
+  header("Content-Disposition: attachment; filename=\"" . $filename . "\""); 
+  header('Content-Length: ' . filesize($tempFile));
+  readfile($tempFile);
+  unlink($tempFile);
+  exit;
+}
+
+/**
+ * Download the XML/TEI doc
+ */
+function _teidownload_download_chapter_as_xml($nid) {
+  $node = node_load($nid);
+  // tei_doc as String
+  $tei_doc = $node->body[$node->language][0]['value'];
+  $tempFile = tempnam('tmp', 'tempname');
+  $file = fopen($tempFile, 'w');
+  fputs($file, $tei_doc);
+  fclose($file);
+  // Dateiname ist der id des divs
+  $filename = _teidownload_get_chapter_name($nid) . '.xml';
+  $filename = utf8_decode($filename);
+  header("Content-Type: text/xml"); 
+  header("Content-Disposition: attachment; filename=\"" . $filename . "\""); 
+  header('Content-Length: ' . filesize($tempFile));
+  readfile($tempFile);
+  unlink($tempFile);
+  exit;
+}
+
+/**
+ * Advanced download submit
+ */
+function _teidownload_advanced_download($nid, &$form_state) {
+  $text_variant = $form_state['values']['text_variant'];
+  $notes = $form_state['values']['notes'];
+  $download_form = $form_state['values']['download_form'];
+  $file_format = $form_state['values']['file_format'];
+  $chapters = $form_state['values']['chapter_list'];
+  switch ($file_format) {
+    case "epub":
+      _teidownload_advanced_download_as_epub($nid, $text_variant, $notes, $download_form, $chapters);
+      break;
+    case "txt":
+      _teidownload_advanced_download_as_txt($nid, $text_variant, $notes, $download_form, $chapters);
+      break;
+    case "xml":
+      _teidownload_advanced_download_as_xml($nid, $text_variant, $notes, $download_form, $chapters);
+      break;
+  }
+}
+
+/**
+ * Download the advanced epub version
+ */
+function _teidownload_advanced_download_as_epub($nid, $text_variant, $notes, $download_form, $chapters) {
+  $css = _teidownload_get_css($text_variant, $notes);
+  // book title
+  $book_title = _teidownload_get_book_title($nid);
+  // book author
+  $author = _teidownload_get_book_author($nid);
+  if ($download_form == "single") {
+    // Create zip file.
+    $zipfile = tempnam(file_directory_temp(), 'epub');
+    $zip = new ZipArchive();
+    if (!$zip->open($zipfile, ZIPARCHIVE::CREATE | ZIPARCHIVE::OVERWRITE)) {
+      form_set_error('', 'Error! can not open zip file');
+      return;
+    }
+  
+    /**
+    * add mimetype
+    * mimetype - tells a reader/operating system what's in here
+    */
+    if ($zip->addFromString('mimetype', 'application/epub+zip') == FALSE) {
+     form_set_error('', 'Error! can not create mimetype');
+     return;
+    }
+    
+    /** 
+    * add container
+    * META-INF folder - This folder contains, at minimum, the container.xml file, 
+    * which tells the reader software where in the zip file to find the book.
+    */
+    $container = '<?xml version="1.0" encoding="UTF-8"?>
+                <container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">
+                    <rootfiles>
+                        <rootfile full-path="OPS/content.opf" media-type="application/oebps-package+xml"/>
+                    </rootfiles>
+                </container>';
+    if ($zip->addFromString('META-INF/container.xml', $container) == FALSE) {
+      form_set_error('Error! can not create container.xml');
+      return;
+    }
+  
+    /**
+     * add book.css
+     */
+    if ($zip->addFromString('OPS/book.css', $css) == FALSE) {
+        form_set_error('Error! can not create book.css');
+        return;
+    }
+  
+    /**
+    * opf-file that lists what's in the zip file
+    */
+    $opf = _teidownload_get_opf($book_title, $author);
+  
+    /**
+     *This is the table of contents. 
+     *This file controls what shows up in the left Table of Contents pane in Digital Editions
+     */
+    $ncx = _teidownload_get_ncx();
+    
+    // First Page
+    $bid = _teicontent_get_book_for_node($nid);
+    $arr = variable_get('teidownload_first_page_' . $bid, array());
+    if (!empty($arr['cover'])) {
+      $result = db_query("SELECT image_path FROM {teidownload_books} t WHERE t.bid = :bid", array(':bid' => $bid));
+      $record = $result->fetch();
+      if (!empty($record)) {
+        $image_path = $record->image_path;
+        $image_path = drupal_realpath($image_path);
+        if (file_exists($image_path)) {
+          // Cover name in zip
+          $cover = 'cover.' . end(explode('.', $image_path));
+          if ($zip->addFile($image_path, 'OPS/' . $cover) == FALSE) {
+            form_set_error('Error! can add cover to zip');
+            return;
+          }
+          $first_page = _teidownload_get_first_page($cover);
+          if ($zip->addFromString('OPS/title.xhtml', $first_page) == FALSE) {
+            form_set_error('Error! can add title.xhtml to zip');
+            return;
+          }
+          _teidownload_create_manifest_item($opf, 'title');
+          // create opf spine itemref
+          _teidownload_create_spine_itemref($opf, 'title');
+          // create ncx navpoint item
+          _teidownload_create_navPoint($ncx, 'navpoint-1', '1', 'Title Page', 'title.xhtml');
+        }
+      }
+    }
+    
+    // second page
+    if (($second_page = _teidownload_get_second_page($nid, $text_variant, $notes)) == TRUE) {
+      $path = 'OPS/book_info.xhtml';
+      $zip->addFromString($path, $second_page);
+      _teidownload_create_manifest_item($opf, 'book_info');
+      //create opf spine itemref
+      _teidownload_create_spine_itemref($opf, 'book_info');
+      //create ncx navpoint item
+      _teidownload_create_navPoint($ncx, 'navpoint-2', '2', 'Book Information', 'book_info.xhtml');
+    }
+    
+    $i = 1;
+    foreach ($chapters as $chapter) {
+      $node = node_load($chapter);
+      // tei_doc as String
+      $tei_doc = $node->body[$node->language][0]['value'];
+      // xhtml as String
+      $path_to_xsl = drupal_get_path('module', 'teidownload') . '/xsl/tei.xsl';
+      $xhtml = _teidownload_transform($tei_doc, $path_to_xsl);
+      // save xhtml as a file in zip
+      $fileName = 'chapter-00' . $i . '.xhtml';
+      $path = 'OPS/' . $fileName;
+      $zip->addFromString($path, $xhtml);
+      // create opf manifest item
+      _teidownload_create_manifest_item($opf, 'chapter-00' . $i);
+      // create opf spine itemref
+      _teidownload_create_spine_itemref($opf, 'chapter-00' . $i);
+      // create ncx navpoint item
+      $chapter_title = _teidownload_get_chapter_name($chapter, $text_variant);
+      _teidownload_create_navPoint($ncx, 'navpoint-' . $i+2, $i+2, $chapter_title, $fileName);
+      $i++;
+    }
+    // add opf to zip
+    $opf = $opf->saveXML(); // dom to String 
+    $zip->addFromString('OPS/content.opf', $opf);
+  
+    // add ncx to zip
+    $ncx = $ncx->saveXML(); // dom to String 
+    $zip->addFromString('OPS/content.ncx', $ncx);
+    $zip->close();
+    // Download zip file.
+    // book_title is the name of the epub-file. Remove ":" form the title
+    $book_title = str_replace(":", "", $book_title);
+    $book_title = str_replace("\"", "", $book_title);
+    // Remove "." form the end
+    $lastchar = $book_title[strlen($book_title)-1]; 
+    if ($lastchar == ".") {
+      $book_title = substr($book_title, 0, -1);
+    }
+    $book_title = utf8_decode($book_title);
+    
+    header('Content-Type: application/epub'); 
+    header("Content-Disposition: attachment; filename=\"" . $book_title . ".epub\""); 
+    header('Content-Length: ' . filesize($zipfile));
+    readfile($zipfile);
+    unlink($zipfile);
+    exit;
+  } 
+  else {     /* separate chapters */
+    $zipfile2 = tempnam(file_directory_temp(), 'epub');
+    $zip2 = new ZipArchive();
+    if (!$zip2->open($zipfile2, ZIPARCHIVE::CREATE | ZIPARCHIVE::OVERWRITE)) {
+      form_set_error('', 'Error! can not open zip file');
+      return;
+    }
+    foreach ($chapters as $chapter) {
+      $zipfile = _teidownload_convert_chapter_to_epub($chapter, $text_variant, $notes);
+      $zipname = _teidownload_get_chapter_name($chapter, $text_variant) . '.epub';
+      //fix ZIP archive UTF-8 filenames problem http://drupal.org/node/707792
+      $zip2->addFile($zipfile, iconv("UTF-8", "CP850", $zipname));
+    }
+    $zip2->close();
+    // Download zip file.
+    // book_title is the name of the epub-file. Remove ":" form the title
+    $book_title = str_replace(":", "", $book_title);
+    $book_title = str_replace("\"", "", $book_title);
+    // Remove "." form the end
+    $lastchar = $book_title[strlen($book_title)-1]; 
+    if ($lastchar == ".") {
+      $book_title = substr($book_title, 0, -1);
+    }
+    $book_title = utf8_decode($book_title);
+    header('Content-Type: application/zip');
+    header("Content-Disposition: attachment; filename=\"" . $book_title . ".zip\""); 
+    header('Content-Length: ' . filesize($zipfile2));
+    readfile($zipfile2);
+    unlink($zipfile2);
+    exit;
+  }
+}
+
+/**
+ * Download the advanced plaintext version
+ */
+function _teidownload_advanced_download_as_txt($nid, $text_variant, $notes, $download_form, $chapters) {
+  // book_title is the name of the epub-file.
+  $book_title = _teidownload_get_book_title($nid);
+  // Remove ":" form the title
+  $book_title = str_replace(":", "", $book_title);
+  $book_title = str_replace("\"", "", $book_title);
+  // Remove "." form the end
+  $lastchar = $book_title[strlen($book_title)-1]; 
+  if ($lastchar == ".") {
+    $book_title = substr($book_title, 0, -1);
+  }
+  $book_title = utf8_decode($book_title);
+  $path_to_xsl = drupal_get_path('module', 'teidownload') . '/xsl/text_corr_reg_author.xsl';
+  if ($text_variant == "corr_reg" && $notes=="author_editor") {
+    $path_to_xsl = drupal_get_path('module', 'teidownload') . '/xsl/text_corr_reg_author_editor.xsl';
+  } 
+  elseif ($text_variant == "sic_orig" && $notes=="author") {
+    $path_to_xsl = drupal_get_path('module', 'teidownload') . '/xsl/text_sic_orig_author.xsl';
+  } 
+  elseif ($text_variant == "sic_orig" && $notes=="author_editor") {
+    $path_to_xsl = drupal_get_path('module', 'teidownload') . '/xsl/text_sic_orig_author_editor.xsl';
+  }
+  
+  if ($download_form=="single") {  
+    $tempfile = tempnam('tmp', 'tempname');
+    $file = fopen($tempfile, 'w' );
+    foreach ($chapters as $chapter) {
+      $node = node_load($chapter);
+      // tei_doc as String
+      $tei_doc = $node->body[$node->language][0]['value'];
+      $txt = _teidownload_transform($tei_doc, $path_to_xsl);
+      $txt = utf8_decode($txt);
+      $txt = str_replace("\n", "\r\n", $txt);
+      fputs($file, $txt);
+      fputs($file, "\r\n");
+      fputs($file, "\r\n");
+      fputs($file, "\r\n");
+      fputs($file, "\r\n");
+      fputs($file, "\r\n");
+    }
+    fclose( $file );
+    header("Content-Type: text/plain"); 
+    header("Content-Disposition: attachment; filename=\"" . $book_title . ".txt\""); 
+    header("Content-Length: " . filesize($tempfile));
+    readfile($tempfile);
+    unlink($tempfile);
+    exit;
+  } 
+  else {
+    $zipfile = tempnam(file_directory_temp(), 'text');
+    $zip = new ZipArchive();
+    if (!$zip->open($zipfile, ZIPARCHIVE::CREATE | ZIPARCHIVE::OVERWRITE)) {
+      form_set_error('', 'Error! can not open zip file');
+      return;
+    }
+    
+    foreach ($chapters as $chapter) {
+      $node = node_load($chapter);
+      // tei_doc as String
+      $tei_doc = $node->body[$node->language][0]['value'];
+      $txt = _teidownload_transform($tei_doc , $path_to_xsl);
+      $txt = utf8_decode($txt);
+      $txt = str_replace("\n", "\r\n", $txt);
+      $tempfile = tempnam('tmp', 'tempname');
+      $file = fopen($tempfile, 'w');
+      fputs($file, $txt);
+      fclose($file);
+      // Dateiname
+      $filename = _teidownload_get_chapter_name($chapter, $text_variant) . '.txt';
+      //fix ZIP archive UTF-8 filenames problem http://drupal.org/node/707792
+      $zip->addFile($tempfile, iconv("UTF-8", "CP850", $filename));
+    }
+    $zip->close();
+    header('Content-Type: application/zip'); // open with
+    header("Content-Disposition: attachment; filename=\"" . $book_title . ".zip\""); //Filename
+    header('Content-Length: ' . filesize($zipfile));
+    readfile($zipfile);
+    unlink($zipfile);
+    exit;
+  }
+}
+
+/**
+ * Download the advanced TEI/XML docs
+ */
+function _teidownload_advanced_download_as_xml($nid, $text_variant, $notes, $download_form, $chapters) {
+  // book_title is the name of the epub-file.
+  $book_title = _teidownload_get_book_title($nid);
+  // Remove ":" form the title
+  $book_title = str_replace(":", "", $book_title);
+  $book_title = str_replace("\"", "", $book_title);
+  // Remove "." form the end
+  $lastchar = $book_title[strlen($book_title)-1]; 
+  if ($lastchar == ".") {
+    $book_title = substr($book_title, 0, -1);
+  }
+  $book_title = utf8_decode($book_title);
+  if ($download_form=="single") {
+    $first_chapter_nid = key($chapters);
+    // remove element from chapters array
+    unset($chapters[$first_chapter_nid]);
+    $node = node_load($first_chapter_nid);
+    $tei_doc = $node->body[$node->language][0]['value'];
+    $result_dom = new domDocument;
+    $result_dom->formatOutput = TRUE;
+    $result_dom->preserveWhiteSpace = FALSE;
+    $result_dom->loadXML($tei_doc);
+    $bodys = $result_dom->getElementsByTagName('body');
+    if ($bodys->length < 1) {
+       drupal_set_message(t('TEI-Document has no body element'));
+       return;
+    }
+    $body = $bodys->item(0);
+    // add the divs form the another chapters to the first chapter's body
+    foreach ($chapters as $chapter) {
+      $node = node_load($chapter);
+      // tei_doc as String
+      $tei_doc = $node->body[$node->language][0]['value'];
+      $dom = new domDocument;
+      $dom->loadXML($tei_doc);
+      $divs = $dom->getElementsByTagName('div');
+      if ($divs->length < 1) {
+       continue;
+      }
+      $div = $divs->item(0);
+      // copy the node to import and associates it with the current document
+      // TRUE, recursively import the subtree under the importedNode.
+      $new_div = $result_dom->importNode($div, TRUE);
+      $body->appendChild($new_div); 
+    }
+    $result_dom = $result_dom->saveXML(); // dom to String 
+    $tempfile = tempnam('tmp', 'tempname');
+    $file = fopen($tempfile, 'w');
+    fputs($file, $result_dom);
+    fclose($file);
+    header("Content-Type: text/xml"); 
+    header("Content-Disposition: attachment; filename=\"" . $book_title . ".xml\""); 
+    header("Content-Length: " . filesize($tempfile));
+    readfile($tempfile);
+    unlink($tempfile);
+    exit;
+  } 
+  else {
+      $zipfile = tempnam(file_directory_temp(), 'xml');
+      $zip = new ZipArchive();
+      if (!$zip->open($zipfile, ZIPARCHIVE::CREATE | ZIPARCHIVE::OVERWRITE)) {
+        form_set_error('', 'Error! can not open zip file');
+        return;
+      }    
+      foreach ($chapters as $chapter) {
+        $node = node_load($chapter);
+        // tei_doc as String
+        $tei_doc = $node->body[$node->language][0]['value'];
+        // Dateiname
+        $filename = _teidownload_get_chapter_name($chapter, $text_variant) . '.xml';
+        $zip->addFromString(iconv("UTF-8", "CP850", $filename), $tei_doc);
+      }
+      $zip->close();
+      header('Content-Type: application/zip'); // open with
+      header("Content-Disposition: attachment; filename=\"" . $book_title . ".zip\"" ); //Filename
+      header('Content-Length: ' . filesize($zipfile));
+      readfile($zipfile);
+      unlink($zipfile);
+      exit;
+   }
+}
+
+/**
+ * create the css for the e-book
+ */
+function _teidownload_get_css($text_variant, $notes) {
+  $corr_reg = "";
+  $sic_orig = "display:none";
+  if ($text_variant == "sic_orig") {
+    $corr_reg = "display:none";
+    $sic_orig = "";
+  }
+  $editor = "display:none";
+  if ($notes=="author_editor") {
+    $editor = "";
+  }  
+ 
+$css = <<<css
+html,body { margin:0px;margin-left:1% }
+body { font-family:serif }
+.maincontent{ font-size:1.0em;width:98%;text-align:justify;line-height: 2 }        
+/* Textformen */
+/* corr/reg Standardanzeige */
+.corr,.reg { $corr_reg }
+.orig, .sic{ $sic_orig }
+/* Anmerkung Author  Standardanzeige */
+.author{}
+/* Anmerkung Herausgeber */
+.editor{ $editor }
+.note { font-size:0.85em }
+.quote { font-size:0.85em }
+.note .quote { font-size:1.0em }
+.quote .note{ font-size:1.0em }
+.hi{ font-style: italic }
+.ll{ margin-left:5%;}
+.italic {font-style:italic }
+
+css;
+  return $css;
+}
+
+/**
+ * create the opf for the e-book
+ */
+function _teidownload_get_opf($title, $author ) {
+  $opf = '<?xml version="1.0" encoding="UTF-8"?>
+            <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="EPB-UUID" version="2.0">
+                <metadata xmlns:opf="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/">
+                  <dc:title>' . $title . '</dc:title>
+                  <dc:creator opf:role="aut">' . $author . '</dc:creator>
+                  <dc:language></dc:language>
+                  <dc:rights></dc:rights>
+                  <dc:publisher></dc:publisher>
+                  <dc:identifier id="EPB-UUID"></dc:identifier>
+               </metadata>
+               <manifest>
+                  <!-- CSS Style Sheets -->
+                  <item id="main-css" href="book.css" media-type="text/css"/>
+                  <!-- NCX -->
+                  <item id="ncx" href="content.ncx" media-type="application/x-dtbncx+xml"/>
+                  <!-- Content Documents -->
+               </manifest>
+               <spine toc="ncx"></spine>
+            </package>';
+  $dom = new DOMDocument();
+  $dom->formatOutput = TRUE;
+  $dom->preserveWhiteSpace = FALSE;
+  $dom->loadXML($opf);
+  return $dom;
+}
+
+/**
+ * create the ncx for the e-book
+ */
+function _teidownload_get_ncx() {
+$ncx = '<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
+        <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+            <head>
+                <meta name="dtb:uid" content=""/>
+                <meta name="dtb:depth" content="1"/>
+                <meta name="dtb:totalPageCount" content="0"/>
+                <meta name="dtb:maxPageNumber" content="0"/>
+            </head>
+            <navMap></navMap>
+        </ncx>';                
+  $dom = new DOMDocument();
+  $dom->formatOutput = TRUE;
+  $dom->preserveWhiteSpace = FALSE;
+  $dom->loadXML($ncx);
+  return $dom;
+}
+
+/*
+ * create item: <item id="chapter-001" href="chapter-001.xml" media-type="application/xhtml+xml"/>
+ */
+function _teidownload_create_manifest_item($opf, $id) {
+  $manifest = $opf->getElementsByTagName('manifest')->item(0);
+  $item = $opf ->createElement('item');
+  $item->setAttribute("id", $id);
+  $item->setAttribute("href", $id . '.xhtml');
+  $item->setAttribute("media-type", 'application/xhtml+xml');
+  $manifest->appendChild($item);
+}
+
+/*
+ * creat itemref: <itemref idref="chapter-001" linear="yes"/>
+ */
+function _teidownload_create_spine_itemref($opf, $idref) {
+  $spine = $opf->getElementsByTagName('spine')->item(0);
+  $itemref = $opf ->createElement('itemref');
+  $itemref->setAttribute("idref", $idref);
+  $itemref->setAttribute("linear", 'yes');
+  $spine->appendChild($itemref);
+}
+
+/*
+ * create a navPoint-Item
+ * <navPoint id="navpoint-1" playOrder="1">
+ *       <navLabel>
+ *       <text>Chapter I</text>
+ *    </navLabel>
+ *    <content src="chapter-001.xhtml"/>
+ *</navPoint>
+ */
+function _teidownload_create_navPoint($ncx, $id, $playorder, $label, $src) {
+  // navMap
+  $navMap = $ncx->getElementsByTagName('navMap')->item(0);
+  // "navPoint"
+  $navPoint = $ncx ->createElement('navPoint');
+  $navPoint->setAttribute("id", $id);
+  $navPoint->setAttribute('playOrder', $playorder);
+  // navLabel
+  $navLabel = $ncx ->createElement('navLabel');
+  // navLabel has a text-element
+  $text = $ncx ->createElement('text');
+  // text-element has a avalue
+  $label = $ncx->createTextNode($label);
+  $text-> appendChild($label);
+  $navLabel -> appendChild($text);
+  $navPoint -> appendChild($navLabel);
+  // content 
+  $content = $ncx ->createElement('content');
+  $content->setAttribute('src', $src);
+  $navPoint -> appendChild($content);
+  $navMap -> appendChild($navPoint);
+}
+
+/**
+ * Return teichi books
+ */
+function _teidownload_get_books() {
+  if (module_exists('book')) {
+    //$result = db_query("select n.nid, b.bid, n.title from {book} b inner join {node} n on n.nid = b.nid inner join {field_data_body} f on b.bid = f.entity_id where b.bid = b.nid AND body_format = 'teichi'");
+    $rows = db_query("select b.bid from {book} b where b.bid = b.nid"); 
+    $arr = array();
+    foreach ($rows as $row) {
+      $arr[] = $row->bid;
+    }
+    if (empty($arr)) {
+      return;
+    }
+    $query = db_select('book', 'b')
+    ->condition('f.body_format', 'teichi', '=')
+    ->condition('b.bid', $arr, 'IN')
+    ->fields('b', array('bid'))
+    ->fields('n', array('nid'))
+    ->fields ('n', array('title'))
+    ->distinct();
+    $query->innerJoin('node', 'n', 'n.nid = b.bid');
+    $query->innerJoin('field_data_body', 'f', 'f.entity_id = b.bid');
+    $result = $query->execute();
+    return $result;
+  }  
+  return;
+}
+
+/**
+ * Return the book chapters sorted by div xml:id 
+ */
+function _teidownload_get_book_chapters($bid) {
+  // Es kann auch sein, dass ein chapter, der nicht teichnode als format hat, zum buch gehören.
+  // Dies wird raus gefiltert
+  $result = db_query("select b.nid from {book} b inner join {field_data_body} f on b.nid = f.entity_id where b.bid = :bid AND body_format = 'teichi'", array(':bid' => $bid));
+  // chapters array contains (node ID --> Chapter name)
+  $chapters = array();
+  foreach ($result as $chapter) {
+    $chapters[$chapter->nid] = _teidownload_get_chapter_name($chapter->nid);
+  }
+  if (count($chapters) == 1) { // sorted
+    return $chapters;
+  }
+  // sort chapters
+  $sorted_chapters = array();
+  while (count($chapters) > 0) {
+     // first index is minimum
+     $index_of_min = key($chapters);
+     $node = node_load($index_of_min);
+     $tei_doc = $node->body[$node->language][0]['value'];
+     $dom = new domDocument;
+     $dom->loadXML($tei_doc);
+     $divs = $dom->getElementsByTagName('div');
+     $div_xml_id_min = '';
+     if ($divs->length > 0) {
+       $div_xml_id_min = $divs->item(0)->getAttribute('xml:id');
+     }
+     // compare
+     foreach ($chapters as $key => $value) {
+       $node = node_load($key);
+       $tei_doc = $node->body[$node->language][0]['value'];
+       $dom = new domDocument;
+       $dom->loadXML($tei_doc);
+       $divs = $dom->getElementsByTagName('div');
+       $div_xml_id = '';
+       if ($divs->length > 0) {
+         $div_xml_id = $divs->item(0)->getAttribute('xml:id');
+       }
+       if ($div_xml_id < $div_xml_id_min) {
+         $div_xml_id_min = $div_xml_id;
+         $index_of_min = $key;
+       }
+     }
+     reset($chapters);
+     // add the minimum to the sorted chapters array
+     $sorted_chapters[$index_of_min] = $chapters[$index_of_min];
+     // remove element from chapters array
+     unset($chapters[$index_of_min]);
+  }
+  return $sorted_chapters;
+}
+
+/**
+ * transform xml to xhtml or plaintext 
+ */
+function _teidownload_transform($tei_doc, $path_to_xsl) {
+  // create a DOM document and load the XSL stylesheet
+  $xsl = new DomDocument;
+  $xsl->load($path_to_xsl);
+  
+  // create process and import the XSL styelsheet into it
+  $proc = new XsltProcessor();
+  $proc->importStylesheet($xsl);
+     
+  // create a DOM document and load the TEI datat
+  $dom = new domDocument;
+  $dom->loadXML($tei_doc);
+  // transform the TEI using the XSL file
+  if ($erg = $proc->transformToXML($dom)) {
+    return $erg;
+  } 
+  else {
+    form_set_error('XSL transformation failed.');
+  } 
+}
+
+/**
+ * Return the book title 
+ */
+function _teidownload_get_book_title($nid) {
+  $node = node_load($nid);
+  // tei_doc as String
+  $tei_doc = $node->body[$node->language][0]['value'];
+  // create a DOM document and load the xml datat
+  $dom = new domDocument;
+  $dom->loadXML($tei_doc);
+  $xpath = new DOMXPath($dom);
+  $book_title = "Book";
+  $items = $xpath->query("/TEI/teiHeader/fileDesc/titleStmt/title");
+  if ($items->length > 0 && $items->item(0)->nodeValue != "") {
+    $book_title = $items->item(0)->nodeValue;
+    // Remove new Lines
+    $book_title = str_replace("\n", "", $book_title);
+    $book_title = str_replace("\r\n", "", $book_title);
+  }
+  return $book_title;
+}
+
+/**
+ * Return the book author 
+ */
+function _teidownload_get_book_author($nid) {
+  $node = node_load($nid);
+  // tei_doc as String
+  $tei_doc = $node->body[$node->language][0]['value'];
+  // create a DOM document and load the xml datat
+  $dom = new domDocument;
+  $dom->loadXML($tei_doc);
+  $xpath = new DOMXPath($dom);
+  $author = "";
+  $items = $xpath->query("/TEI/teiHeader/fileDesc/titleStmt/author");
+  if ($items->length > 0 && $items->item(0)->nodeValue != "") {
+    $author = $items->item(0)->nodeValue;
+  }
+  return $author;
+}
+
+/**
+ * Return the correct name of chapter(corr/reg or sic/orig) 
+ */
+function _teidownload_get_chapter_name($nid, $text_variant="") {
+  $node = node_load($nid);
+  // tei_doc as String
+  $tei_doc = $node->body[$node->language][0]['value'];
+  $path_to_xsl = drupal_get_path('module', 'teidownload') . '/xsl/doc_name.xsl';
+  $erg= _teidownload_transform($tei_doc, $path_to_xsl);
+  // create a DOM document and load the xml datat
+  $dom = new domDocument;
+  $dom->loadXML($erg);
+  $name = $dom->getElementsByTagName('corr_reg')->item(0)->nodeValue;
+  if ($text_variant == "sic_orig") {
+    $name = $dom->getElementsByTagName('sic_orig')->item(0)->nodeValue;
+  }
+  
+  if ($name == '') { // TEI-doc hase no header in div
+    // $result = db_query("SELECT n.title FROM {node} n WHERE n.nid = :nid", array(':nid' => $nid));
+    $query = db_select('node', 'n')
+      ->fields ('n', array('title'))
+      ->condition('n.nid', $nid, '=')
+      ->distinct();
+    $result = $query->execute();
+    $record = $result->fetch();
+    $name = $record->title;
+    $lastchar = $name[strlen($name)-1]; 
+    if ($lastchar == ".") {
+      $name = substr($name, 0, -1);
+    }
+    return $name;
+  }
+  // Remove new Lines
+  $name = str_replace("\n", "", $name);
+  $name = str_replace("\r\n", "", $name);
+  // Remove "." form the end
+  $lastchar = $name[strlen($name)-1]; 
+  if ($lastchar == ".") {
+    $name = substr($name, 0, -1);
+  }
+  return $name;
+}
+
+/**
+ * Create the title.xhtml 
+ */
+function _teidownload_get_first_page($path_to_image) {
+$out = <<<xhtml
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<body>
+<div style="text-align: center; page-break-after: always;">
+<img src="$path_to_image" style="height: 100%; max-width: 100%;"/>    
+</div>
+</body>
+</html>
+xhtml;
+return $out;
+}
+
+/**
+ * Create the bookinfo.xhtml 
+ */
+function _teidownload_get_second_page($nid, $text_variant='', $notes='') {
+  $bid = _teicontent_get_book_for_node($nid);
+  $arr = variable_get('teidownload_second_page_' . $bid, array());
+  if (!empty($arr['author']) || !empty($arr['title']) || !empty($arr['date']) || !empty($arr['respStmt']) 
+     || !empty($arr['editionStmt']) || !empty($arr['publicationStmt']) || !empty($arr['projectDesc'])
+     || !empty($arr['file_version'])) {
+    $node = node_load($nid);
+    $tei_doc = $node->body[$node->language][0]['value'];
+    $dom = new DOMDocument();
+    $dom->loadXML($tei_doc);
+    $xpath = new DOMXPath($dom);
+    // title
+    $title = ""; 
+    if (!empty($arr['title'])) {
+      $items = $xpath->query("/TEI/teiHeader/fileDesc/titleStmt/title");
+      if ($items->length > 0) {
+        $title = $items->item(0)->nodeValue;
+      }
+    }
+    // author
+    $author = ""; 
+    if (!empty($arr['author'])) {
+      $items = $xpath->query("/TEI/teiHeader/fileDesc/titleStmt/author");
+      if ($items->length > 0) {
+        $author = $items->item(0)->nodeValue;
+      }
+    }  
+    // editor
+    $editor = "";
+    if (!empty($arr['editor'])) {
+      $items = $xpath->query("/TEI/teiHeader/fileDesc/titleStmt/editor");
+      if ($items->length > 0) {
+        $editor = variable_get('teidownload_designation_of_editor_' . $bid, 'Edited by') . " " . $items->item(0)->nodeValue;
+      }
+    }   
+    // editionStmt
+    $edition = "";
+    if (!empty($arr['edition'])) {
+      $items = $xpath->query("/TEI/teiHeader/fileDesc/editionStmt/edition");
+      if ($items->length > 0) {
+        $edition = $items->item(0)->nodeValue;
+      }
+    }
+    // publicationStmt
+    $publicationStmt = "";
+    if (!empty($arr['publicationStmt'])) {
+      $items = $xpath->query("/TEI/teiHeader/fileDesc/publicationStmt");
+      if ($items->length > 0) {
+        $publicationStmt = $items->item(0)->nodeValue;
+      }
+    }
+    // projectDesc
+    $projectDesc = "";
+    if (!empty($arr['projectDesc'])) {
+      $items = $xpath->query("/TEI/teiHeader/encodingDesc/projectDesc");
+      if ($items->length > 0) {
+        $projectDesc = $items->item(0)->nodeValue;
+      }
+    }
+    // file_version
+    $file_version = "";
+    if (!empty($arr['file_version'])) {
+      if ($text_variant == "sic_orig") {
+        $file_version = variable_get('teidownload_text_for_sic_orig_' . $bid, 'Ce fichier représente la transcription linéaire.');
+      } 
+      else {
+        $file_version = variable_get('teidownload_text_for_corr_reg_' . $bid, 'Ce fichier représente le texte de lecture.');
+      }
+      
+      if ($notes=="author_editor") {
+        $file_version .= '<br/>' . variable_get('teidownload_text_for_author_editor_notes_' . $bid, 'Ce fichier comporte les notes de l’auteur et les notes de l’éditeur.');
+      } 
+      else {
+        $file_version .= '<br/>' . variable_get('teidownload_text_for_author_notes_' . $bid, 'Ce fichier ne comporte que les notes de l’auteur.');
+      }
+    }
+    
+$out = <<<xhtml
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<body>
+<div style="text-align: center;"> 
+<h1>$title</h1>  
+<h3>$author</h3>
+<p>$editor</p>
+<p>$edition</p>
+<p>$publicationStmt</p>
+<p>$projectDesc</p>
+<p>$file_version</p>
+</div>
+</body>
+</html>
+xhtml;
+   return $out;
+  }  
+}

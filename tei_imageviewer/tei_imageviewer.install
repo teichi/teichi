@@ -1,0 +1,163 @@
+<?php
+/**
+ * @file
+ * install file for table creation etc.
+ */
+
+
+/**
+ * Implements hook_install ()
+ */
+
+function tei_imageviewer_install() {
+  // create node info table
+ /* drupal_install_schema("tei_imageviewer_settings"); */
+debug('install tei_imageviewer');
+tei_imageviewer_reset_Settings('default');
+
+// create default folder if not ex.
+// set default path
+tei_imageviewer_prepare_folder();
+
+// update chapter data from all tei nodes
+tei_imageviewer_reparse_teinodes();
+
+// create config data for js-client
+tei_imageviewer_settings_as_json();
+
+
+
+}
+
+
+
+/**
+** rest settings to system defaults
+*"pw":="200",
+*"ph":="300",
+*"vw":="370",
+*"vh":="600",
+**/
+function tei_imageviewer_reset_Settings($id) {
+variable_set('tei_imageviewer_imagepath_default', '/drupal/sites/default/files/images/deepzoom/defaultbook/');
+
+variable_set('tei_imageviewer_pw_'. $id, '200');
+variable_set('tei_imageviewer_ph_'. $id, '300');
+
+variable_set('tei_imageviewer_vw_'. $id, '370');
+variable_set('tei_imageviewer_vh_'. $id, '600');
+
+}
+
+
+
+/**
+* create default public folder for images
+**/
+function tei_imageviewer_prepare_folder() {
+
+  
+  $url = "public:///images/deepzoom/defaultbook/";
+  $created_folder = file_prepare_directory($url,FILE_CREATE_DIRECTORY);
+  //$urlPath = file_create_url($url) + "";
+  $urlPath = file_create_url($url) ;
+ 
+ // THINK: file_create_url( drupal_get_path('module', 'tei_imageviewer') . '/img/');
+
+
+  // drupal/sites/all/modules/tei_imageviewer/img 
+  // extract relative path:
+  //  /Applications/XAMPP/xamppfiles/htdocs/drupal/sites/default/files/images/deepzoom/defaultbook
+  // ->                                   /drupal/sites/default/files/images/deepzoom/defaultbook
+
+ //$full_path    = drupal_realpath($url);
+// $i            = stripos($full_path, base_path());
+// $relative_path= substr($full_path,$i);
+
+// add a '/' to the the end of path
+ $urlPath= $urlPath . '/';
+ //TODO: show path in admin gui
+  if($created_folder) {
+     variable_set('tei_imageviewer_imagepath_default', $urlPath);
+     drupal_set_message( t('TEI Imageviewer: default imag url is: ') . $urlPath, 'status');
+   } else {
+     drupal_set_message( t('TEI Imageviewer: cant create default imagefolder for url: ') . $urlPath, 'error');
+  }
+
+}
+
+/**
+ * Implements hook_uninstall ()
+ */
+function tei_imageviewer_uninstall() {
+ /* drupal_uninstall_schema("tei_imageviewer_settings"); */
+ // remove defaultvariables
+ // http://api.drupal.org/api/drupal/includes--bootstrap.inc/function/variable_del/
+  global $conf;
+  foreach (array_keys($conf) as $key) {
+  // It's important to use === instead of == with strpos()
+  if (strpos($key, 'tei_imageviewer_') === 0) {
+    variable_del($key);
+   }
+ }
+}
+
+
+/**
+ * Implements hook_schema ()
+ */
+/*function tei_imageviewer_settings_schema() {
+  $schema['tei_imageviewer_settings"'] = array(
+    'description' => 'Store the settings for imageviewer per node.',
+    'fields' => array(
+      'nodenr' => array(
+    'type' => 'int',
+    'not null' => TRUE,
+    'default' => 0,
+    'description' => 'Id of the node equals info id'
+      ),
+      'viewer_w' => array(
+    'type' => 'varchar',
+    'not null' => TRUE,
+    'length'   => 255,
+    'default' => '',
+    'description' => 'imageviwers width'
+      ),
+    'viewer_h' => array(
+    'type' => 'varchar',
+    'not null' => TRUE,
+    'length'   => 255,
+    'default' => '',
+    'description' => 'imageviwers height',
+      ),
+
+ 'preview_w' => array(
+    'type' => 'varchar',
+    'not null' => TRUE,
+    'length'   => 255,
+    'default' => '',
+    'description' => 'previews width',
+      ),
+    'preview_h' => array(
+    'type' => 'varchar',
+    'not null' => TRUE,
+    'length'   => 255,
+    'default' => '',
+    'description' => 'previews height',
+      ),
+      'img_path' => array(
+    'type' => 'varchar',
+    'not null' => TRUE,
+    'default' => '',
+    'description' => 'relative path to image folder of node'
+      ),
+    ),
+    'primary key' => array('nodenr'),
+  );
+
+  return $schema;
+}
+*/
+
+
+

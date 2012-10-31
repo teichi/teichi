@@ -1,0 +1,60 @@
+<?php
+// $Id$
+/**
+* @file
+* install file for table creation etc.
+*/
+
+
+/**
+ * Implementation of hook_install()
+ */
+
+function teidownload_install() {
+  // create node info table
+  drupal_install_schema("teidownload_books");
+}
+
+/**
+ * Implementation of hook_uninstall()
+ */
+  
+function teidownload_uninstall() {
+  drupal_uninstall_schema("teidownload_books");
+  // Delete all variables which begin with the namespaced "teidownload*".
+  $video_vars = array();
+  $result = db_query("SELECT name FROM {variable} WHERE name LIKE 'teidownload%'");
+  while ($record = $result->fetch()) {
+    variable_del($record->name);
+  }
+  // Delete teidownload image folder.
+  //$dir_path = 'public://teidownload/';
+  //file_unmanaged_delete_recursive($dir_path);
+}
+
+
+/**
+ * Implementation of hook_schema()
+ */
+function teidownload_books_schema() {
+  $schema['teidownload_books'] = array(
+    'description' => 'Table for books',
+    'fields' => array(
+      'bid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => ' The book ID '
+      ),
+      'image_path' => array(
+        'type' => 'varchar', 
+        'length' => 128,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Book cover image'
+      ),
+    ),
+    'primary key' => array('bid'),
+  );
+  return $schema;
+}

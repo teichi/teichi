@@ -1,0 +1,10 @@
+; $Id$
+name = TEI Download
+description = "Lets you download TEI/XML files as EPUB-Format"
+core = 7.x
+package = TEICHI
+files[] = teidownload.module
+files[] = teidownload.install
+files[] = teidownload.admin.inc
+dependencies[] = teicontent
+configure = admin/config/teichi/teidownload

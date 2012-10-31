@@ -1,0 +1,64 @@
+; $Id$
+name = "TEI Imageviewer"
+description = "Show high resolution images (DeepZoom) with Seadragon"
+package = "TEICHI"
+core = 7.x
+; modules config link
+configure = admin/config/teichsettings/viewer 
+dependencies[] = teicontent
+dependencies[] = teidownload
+
+files[] = tei_imageviewer.admin.inc
+files[] = tei_imageviewer.module
+files[] = tei_imageviewer.install
+
+
+; load via function system: add_js
+; scripts[] = js/viewer-conf.js
+; scripts[] = js/hover-preview.js
+; scripts[] = js/seadragon-book.js
+; scripts[] = js/jquery-ui-1.8.15.custom.min.js
+
+; TODO: use global jquery-ui form:
+; /Applications/XAMPP/xamppfiles/htdocs/drupal/misc/ui
+
+
+
+; scripts[] = js/jquery.tools.min.js
+; load seadragon from js server (hook_init)
+; scripts[] = js/seadragon-min.js
+; USE Seadragon Clone with new BSD Licence
+; scripts[] = js/OpenSeadragon.js
+
+
+; stylesheets[screen][] =  css/seadragon-style.css
+; stylesheets[screen][] =  css/hover-preview.css
+; mereged into
+stylesheets[screen][] =  css/tei_imageviewer.css
+
+; stylesheets[screen][] =  css/jquery-ui-1.8.15.custom.css
+
+; seadragon dev version
+;  ;      scripts[] = js/src/Seadragon.Core.js 
+;        scripts[] = js/src/Seadragon.Config.js 
+;        scripts[] = js/src/Seadragon.Strings.js 
+;       scripts[] = js/src/Seadragon.Debug.js 
+;        scripts[] = js/src/Seadragon.Profiler.js 
+;        scripts[] = js/src/Seadragon.Point.js 
+;        scripts[] = js/src/Seadragon.Rect.js 
+;        scripts[] = js/src/Seadragon.Spring.js 
+;        scripts[] = js/src/Seadragon.Utils.js 
+;        scripts[] = js/src/Seadragon.MouseTracker.js 
+;        scripts[] = js/src/Seadragon.EventManager.js 
+;        scripts[] = js/src/Seadragon.ImageLoader.js 
+;        scripts[] = js/src/Seadragon.Buttons.js 
+;        scripts[] = js/src/Seadragon.TileSource.js 
+;        scripts[] = js/src/Seadragon.DisplayRect.js 
+;        scripts[] = js/src/Seadragon.DeepZoom.js 
+;        scripts[] = js/src/Seadragon.Viewport.js 
+;        scripts[] = js/src/Seadragon.Drawer.js 
+;        scripts[] = js/src/Seadragon.Viewer.js
+
+
+
+
