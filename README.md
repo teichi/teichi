@@ -8,7 +8,7 @@ The TEICHI Framework - Bringing TEI Lite to Drupal
 
 ### Bringing TEI Lite to Drupal
 
-The TEICHI Framework is a modular tool for displaying documents encoded 
+The [TEICHI Framework](http://www.teichi.org/) is a modular tool for displaying documents encoded 
 according to the guidelines of the Text Encoding Initiative (TEI Lite P5) 
 as pages in a Drupal-based website. The framework's name brings together 
 the [Text Encoding Initiative (TEI)](http://www.tei-c.org/) and Computer-Human Interaction (CHI).
@@ -25,6 +25,7 @@ high-resolution digital facsimiles, and of searching in the texts,
 all inside Drupal's powerful and flexible environment. 
 For more details, see the list of [features](http://www.teichi.org/features) and the [documentation](http://www.teichi.org/documentation).
 
+ ![Some Features of TEICHI](https://raw.github.com/teichi/teichi/master/example1.jpg) 
 
 ### TEICHI in theory and practice
 
