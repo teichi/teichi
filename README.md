@@ -1,4 +1,3 @@
-
 TEICHI
 ======
 
@@ -30,7 +29,11 @@ For more details, see the list of [features](http://www.teichi.org/features) and
 ### TEICHI in theory and practice
 
 For a scholarly digital edition using the TEICHI framework, 
-see the edition of Bérardier de Bataut's Essai sur le récit at
+see the edition of Bï¿½rardier de Bataut's Essai sur le rï¿½cit at
 [www.berardier.org](http://www.berardier.org)
 For some materials on the technical implementation, 
 see: [http://www.teichi.org/](http://www.teichi.org/). 
+
+### Development
+
+For bug reports and feature requests, please use the project's Issues page on Github. If you would like to contribute code to the project, please create a fork.
