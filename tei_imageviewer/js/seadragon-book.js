@@ -113,7 +113,7 @@ var xmlDzi= '<?xml version="1.0" encoding="utf-8"?>'
     
      viewer.openDzi(imgFile);
 	     // update the titlebar with new pagenumber
-    jQuery('#container').dialog('option', 'title', getTitleText());
+    jQuery('#ImageviewerContainer').dialog('option', 'title', getTitleText());
 
 
 //jQuery(dialog).dialog({position: ['top','left']  ,dialogClass: "flora"});
@@ -161,12 +161,12 @@ var xmlDzi= '<?xml version="1.0" encoding="utf-8"?>'
    
 function initSeadragon() {
  /* simple
-        jQuery('#container').css({ display: 'block', top: 50,left:20, 
+        jQuery('#ImageviewerContainer').css({ display: 'block', top: 50,left:20, 
                                 'border-width': 3, 'border-style': 'solid',
                                 backgroundcolor: 'white',
                                 'border-color': 'black', height: conf.vh, width: conf.vw, position: 'fixed'});
                                 */
-    viewer = new Seadragon.Viewer("container");
+    viewer = new Seadragon.Viewer("ImageviewerContainer");
     var c = makeControl();
        // for(i=0; i < c.length; ++i ){ 
       //    viewer.addControl(c[i],Seadragon.ControlAnchor.BOTTOM_LEFT);
@@ -177,11 +177,11 @@ function initSeadragon() {
     changeImage(id);
     
     // check if an existing dialog has the sticky attribute
-    var dialogIsSticky = jQuery('#container').dialog( "option", "sticky") === true;
+    var dialogIsSticky = jQuery('#ImageviewerContainer').dialog( "option", "sticky") === true;
     console.log("found an sticky dialog: "+dialogIsSticky);
     
 	// start seadragon as jquery-ui dialog
-    var dialog = jQuery('#container').dialog({
+    var dialog = jQuery('#ImageviewerContainer').dialog({
                     height: conf.vh,
                      width: conf.vw,
                      position: 'left',
@@ -283,7 +283,7 @@ var prevPage = new Seadragon.Button(
 			Seadragon.Config.imagePath + "prev-arrow-1.png",
 			Seadragon.Config.imagePath + "prev-arrow-1.png",
                 null,       // do nothing on initialpress
-		function () { jQuery( "#container" ).dialog( "option", "sticky", false);},     // 
+		function () { jQuery( "#ImageviewerContainer" ).dialog( "option", "sticky", false);},     // 
 		null,       // no need to use clickthresholds
 		null,       // do nothing on enter
 		null       // do nothing on exit
@@ -301,7 +301,7 @@ var prevPage = new Seadragon.Button(
 
 function toogleSticky(elmt) {
 
-  var dialog = jQuery( "#container" );
+  var dialog = jQuery( "#ImageviewerContainer" );
   var isSticky = dialog.dialog( "option", "sticky");
   // toggle
   dialog.dialog( "option", "sticky", !isSticky);

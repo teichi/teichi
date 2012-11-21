@@ -1,6 +1,6 @@
 
 /** #### Tooltip  #### */
-.tooltip {
+.ImageviewerTooltip {
 z-index: 5;
 // width: 200px;
 // height: 300px;
@@ -21,7 +21,7 @@ z-index: 5;
 
 /*### seadragon ####*/
 
-.container
+.ImageviewerContainer
       {
         width: 10px;
         height: 600px;

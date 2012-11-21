@@ -8,7 +8,8 @@
 */
 // logic goes here
 
-
+//http://localhost/drupal/admin/config/teichsettings
+//configure = admin/config/teichsettings/teiimageviewer
 
 
 
@@ -90,7 +91,7 @@ $items['admin/config/viewer/size'] = array(
 
 // TODO: create a mini useguide 
 $items['admin/config/teichsettings/viewer/tool'] = array(
-   'title' => t('DeeZoom Information. TODO'),
+   'title' => t('HOWTO'),
    'description' => t('A Guide to generate DeepZoom images.') ,
    'page callback' => 'tei_imageviewer_deep_zoom_infos',
    //'page arguments' => array(''),
@@ -272,16 +273,6 @@ function tei_imageviewer_books_configuration() {
  
 }
 
-function tei_imageviewer_deep_zoom_infos() {
-//tei_imageviewer_help();
- $out = 'TODO ' . l("Module help", "admin/help/tei_imageviewer", array()) ;
- return $out;
-
-}
-
-
-
-
 
 /**
  * Implements hook_help()
@@ -289,7 +280,7 @@ function tei_imageviewer_deep_zoom_infos() {
 function tei_imageviewer_help($path, $arg) {
   /*$output = '';  
   switch ($path) {
-    case "admin/help#viewer":
+    case "admin/help#tei_imageviewer":
       $output = '<p>'.  t("Imageviewer using Seadragon") .'</p>';
       break;
   }
@@ -483,11 +474,11 @@ function viewer_contents() {
 //  $dummyImg =   base_path() . drupal_get_path('module', 'tei_imageviewer') . '/img/dummy.png' ;
 //  $button_text = t('open first page');
 //TODO: use moduls interface to edit labels
-  $button_text        = t('afficher première page');
+  $button_text        = t('open viewer');//t('afficher première page');
   $legend_text        = t('options');
 //  $description_text = t('Edit Options');
   $description_text   = ''; 
-  $save_text          ='enregistrer';
+  $save_text          =t('save');//enregistrer
   //TODO: use tempelate
   $content = "
 
@@ -508,13 +499,102 @@ function viewer_contents() {
 </fieldset>
 
 
-   <div class='tooltip'> 
+   <div class='ImageviewerTooltip'> 
      <img class='previewIMG'  alt='open in seadragon'> </img>
    </div>
-   <div id='container'> </div>
+   <div id='ImageviewerContainer'> </div>
     ";
    return $content;
   }
 
 
 
+function tei_imageviewer_deep_zoom_infos() {
+//tei_imageviewer_help();
+ 
+ $out = ' <br>Imageviewer Documentation:<br>
+
+
+<pre>
+TEI Imageviewer:
+Enrich your TEI documentes with high resolution Scans / Facsimiles.
+Show per TEI-<Pagebreak> Tag one  Facsimile as DeepZoom Image
+
+Features:
+view and preview the digital facsimiles of any page of the digital edition
+• Zoom in, zoom out, move around in the image with ease
+• Flip through the digital facsimiles in a chapter
+
+
+
+Limitation:
+Since it depends on the Seadragon Libary it supports only  DeepZoom single image file format and no Deep Zoom Collections. http://gallery.expression.microsoft.com/SeadragonAjax
+
+Dependencies:
+moduls:
+ Drupal books 
+ Tei Content
+ Tei Download
+
+Java  Runtime: Convert images into  DeepZoom Images
+
+Install:
+Copy the tei_imageviewer folder  into drupal’s modul folder.
+
+
+Configuration:
+By default, the TEI Imageviewer block only appear on pages whose url match ‘node/*’. 
+You can configure the block through drupal admin interface for blocks:
+ Home » Administration » Structure » Blocks
+
+
+Naming/ Mapping Conventions for Facsimiles:
+The basic idea is that you provide  a facsimile image, as DeepZoom Image,  for each page. The mapping  from "TEI to  Image" is done via the "xml:id" attribute from the <pb> tag.
+ 
+For each facsimile / <pb>-tag  you need three things:
+a preview image: *.jpg
+the folder containing the tiled DeepZoom image: *_files
+the DeepZoom metafile for the image: *.dzi
+
+A short example:
+If you have a  page(<pb>) with xml:id="p1" 
+TEI XML:  <pb xml:id ="p1" n="i">
+
+So the name of the DeepZoom Image metafile should be p1.dzi and you need a folder containing the DeepZoom (sub) images named p1_files. The thumbnail should be named p1.jpg.
+These three things you need for every facsimile.
+If you provide the n attribute for the value, will be shown in the header of the imageviewer.
+
+
+Howto generate the DeepZoom Images?
+To generate the DeepZoom Images you can use a commandline tool (DeepZoomTool), written in Java, which is located in a folder called java within the imageviewer.
+To use it, you need a popper installed Java-runtime.  Type on your commandline:
+java  DeepZoomTool <Image1 Image2 ....>
+ 
+If you get an error like: “java.lang.OutOfMemoryError: Java heap space ...”,
+than the process need more ram to covert the image. To do so,  increase use javas -XmX parameter.  
+java -Xmx<Ram in MB>m DeepZoomTool <Image1 Image2 ….>
+Depending on how much ram you have, increase the value until the error message disappears.
+The defaultvaule is 64. Try somethings like 300 up to all the free  ram  your system can offer  for large images.
+ 
+Where do I put the DeepZoom Images?
+The files should/must be located under  drupals\'s default public image directory, somewhere like:
+<drupal>/sites/default/files/images/deepzoom/defaultbook
+The module will create the folderstructure deepzoom/defaultbook for you.
+You can check the path in the admin panel
+ 
+Put the generated files and folders inside the folder "defaultbook". 
+Or create a seperat folder for each book.
+You can change the path for each book in  the admin menu provided by the imageviewer modul.
+You can also customize different settings and folders for each book .
+ 
+And you need to organize your TEI-Nodes as a book in Drupal, so the TEICHI Framework is aware of your TEI-Nodes.
+ 
+Maybe you need to trigger  “reparse all TEI Nodes”  from the imageviewer\'s menu.
+</pre>
+';
+
+ $out = $out  . l("Module help", "admin/help/tei_imageviewer", array()) ;
+
+ return $out;
+
+}
