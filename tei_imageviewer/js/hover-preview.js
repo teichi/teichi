@@ -88,7 +88,19 @@ Drupal.behaviors.tei_imageviewer = {
  
    // look for img path
    // defiend in viewer-conf.js
-      var conf = getConfig( (currentBook === undefined) ? "default"  :   String(currentBook)); 
+   
+   // look for img path
+   // defiend in viewer-conf.js
+   var conf;
+    // handle undefind variable TODO:BUG?
+    if((typeof currentBook === "undefined")) {
+	 var currentBook = 0;
+	 console.log("undefined variable: currentBook");
+	 conf = getConfig("default"); 
+	}
+	else {
+	 conf = getConfig( String(currentBook));
+	}
    
   console.log("use conf for book nr:"+currentBook);
   console.dir(conf); 
