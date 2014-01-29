@@ -1336,11 +1336,16 @@ function _teicontent_p( $text ) {
 
 /**
  * Given format id (system id for format created by user), returns
- * true (1) if using xmlcontent module
+ * true (1) if using teicontent module
  */
 function _is_using_teicontent( $format_id ) {
   $formats = filter_list_format( $format_id );
-  return $formats[ 'teicontent' ]->status = '1';
+  // check if teicontet filter is set
+  if (!isset($formats) || !isset($formats['teicontent']) ) {
+     return false;
+  }
+  // is active?
+  return $formats[ 'teicontent' ]->status != '0';
 }
 
 /**
