@@ -111,6 +111,8 @@ a:hover {
 /* ##### Standard display reg-corr-expan etc. ##### */
 .orig{ display:none;}
 .sic{display:none;}
+.abbr{display:none;}
+.expan{display:none;}
 .hi{font-style: italic;}
 .emph{font-style: italic;}
 .mentioned{font-style: normal;}

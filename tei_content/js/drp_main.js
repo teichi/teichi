@@ -126,15 +126,19 @@ Drupal.toggleView = function (how) // toggleView
 	{
 	    $('.orig').show();
 	    $('.sic').show();
-	    $('.reg').hide();
+		$('.abbr').show();
+	    $('.reg').hide();		
 	    $('.corr').hide();
+		$('.expan').hide();
 	    toggle1.innerHTML = " <span id='activetextmode'>"+tRegText+"</span>";
 	    toggle2.innerHTML = " <span id='passivetextmode'>"+tOrigText+"</span>";
 	}else{
 	    $('.orig').hide();
 	    $('.sic').hide();
+		$('.abbr').hide();
 	    $('.reg').show();
 	    $('.corr').show();
+		$('.expan').show();
 	    toggle1.innerHTML = " <span id='passivetextmode'>"+tRegText+"</span>";
 	    toggle2.innerHTML = " <span id='activetextmode'>"+tOrigText+"</span>";
 	}
