@@ -16,17 +16,16 @@ function getConfig(key) {
 
 
 /**
-*
 *find config
 **/
 function findConfig(data, key) {
   var record =  data[key];
 //  return (record == null || record == undefined) ? data['default'] : record;
   if (record == null)
-      record = data.default;
+      record = data["default"];
 
   else if (record == undefined)
-       record =  data.default;
+       record =  data["default"];
  
  return record;
  }
